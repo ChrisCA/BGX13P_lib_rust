@@ -522,30 +522,34 @@ impl Bgx13p {
 
 /// searches and returns serial port devices connected via USB
 fn find_module() -> Result<Vec<SerialPortInfo>> {
-    Ok(serialport::available_ports().map(|f| {
-        f.into_iter()
-            .filter(|pi| match &pi.port_type {
-                SerialPortType::UsbPort(n) => {
-                    trace!("scanned module: {:?}", &n);
-                    if let Some(m) = &n.manufacturer {
-                        if m.contains("Silicon Labs") || m.contains("Cygnal") || m.contains("CP21")
-                        {
-                            true
-                        } else {
-                            warn!(
-                                "Found UsbPort but manufacturer string {} didn't match for BGX",
-                                m
-                            );
-                            false
-                        }
+    let ports = serialport::available_ports()?;
+    trace!("Detected the following ports: {:?}", &ports);
+
+    let ports = ports
+        .into_iter()
+        .filter_map(|p| match &p.port_type {
+            SerialPortType::UsbPort(n) => {
+                debug!("Found USB port: {:?}", &n);
+                
+                if let Some(m) = &n.manufacturer {
+                    if m.contains("Silicon Labs") || m.contains("Cygnal") || m.contains("CP21") {
+                        Some(p)
                     } else {
-                        false
+                        warn!(
+                            "Found UsbPort but manufacturer string {} didn't match for BGX",
+                            m
+                        );
+                        None
                     }
+                } else {
+                    None
                 }
-                _ => false,
-            })
-            .collect::<Vec<_>>()
-    })?)
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    Ok(ports)
 }
 
 struct Command;
