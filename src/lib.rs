@@ -11,8 +11,11 @@ use combine::{
     },
     token,
 };
-use log::{debug, info, trace};
-use serialport::{ClearBuffer::All, DataBits, FlowControl, Parity, SerialPort, StopBits};
+use log::{debug, info, trace, warn};
+use serialport::{
+    ClearBuffer::All, DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortType,
+    StopBits,
+};
 use std::{
     fmt::Display,
     io::{Read, Write},
@@ -231,7 +234,14 @@ fn test_response_header_6() {
 
 impl Bgx13p {
     pub fn new() -> Result<Self> {
-        let op = serialport::new("/dev/ttyUSB0", 115200)
+        let p = find_module()?;
+
+        for e in &p {
+            info!("Found port: {}", e.port_name);
+        }
+
+        let chosen_port = p.first().context("Couldn't get any first port")?;
+        let op = serialport::new(&chosen_port.port_name, 115200)
             .data_bits(DataBits::Eight)
             .flow_control(FlowControl::None)
             .parity(Parity::None)
@@ -513,6 +523,38 @@ impl Bgx13p {
 
         Ok(())
     }
+}
+
+/// searches and returns serial port devices connected via USB
+fn find_module() -> Result<Vec<SerialPortInfo>> {
+    let ports = serialport::available_ports()?;
+    trace!("Detected the following ports: {:?}", &ports);
+
+    let ports = ports
+        .into_iter()
+        .filter_map(|p| match &p.port_type {
+            SerialPortType::UsbPort(n) => {
+                debug!("Found USB port: {:?}", &n);
+                
+                if let Some(m) = &n.manufacturer {
+                    if m.contains("Silicon Labs") || m.contains("Cygnal") || m.contains("CP21") {
+                        Some(p)
+                    } else {
+                        warn!(
+                            "Found UsbPort but manufacturer string {} didn't match for BGX",
+                            m
+                        );
+                        None
+                    }
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    Ok(ports)
 }
 
 struct Command;
