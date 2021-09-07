@@ -9,7 +9,7 @@ fn main() -> Result<()> {
     SimpleLogger::new().init().unwrap();
     // let macs = vec!["d0cf5e828506", /* "000d6fa7a5e8",*/ "000d6fa7a154"];
 
-    if let Some(mut bgx) = Bgx13p::new() {
+    if let Ok(mut bgx) = Bgx13p::new() {
         bgx.reach_well_known_state()?;
 
         let macs = bgx.scan()?.into_iter().map(|d| d.mac).collect::<Vec<_>>();

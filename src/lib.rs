@@ -11,7 +11,7 @@ use combine::{
     },
     token,
 };
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 use serialport::{
     ClearBuffer::All, DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortType,
     StopBits,
@@ -233,32 +233,26 @@ fn test_response_header_6() {
 }
 
 impl Bgx13p {
-    pub fn new() -> Option<Self> {
-        let p = find_module();
+    pub fn new() -> Result<Self> {
+        let p = find_module()?;
 
-        if let Some(p) = p {
-            for e in &p {
-                info!("Found port: {}", e.port_name);
-            }
-
-            if let Some(chosen_port) = p.first() {
-                if let Ok(op) = serialport::new(&chosen_port.port_name, 115200)
-                    .data_bits(DataBits::Eight)
-                    .flow_control(FlowControl::None)
-                    .parity(Parity::None)
-                    .stop_bits(StopBits::One)
-                    .timeout(Command::TIMEOUT_COMMON)
-                    .open()
-                {
-                    return Some(Self {
-                        port: op,
-                        default_settings_applied: Default::default(),
-                    });
-                };
-            }
+        for e in &p {
+            info!("Found port: {}", e.port_name);
         }
 
-        None
+        let chosen_port = p.first().context("Couldn't get any first port")?;
+        let op = serialport::new(&chosen_port.port_name, 115200)
+            .data_bits(DataBits::Eight)
+            .flow_control(FlowControl::None)
+            .parity(Parity::None)
+            .stop_bits(StopBits::One)
+            .timeout(Command::TIMEOUT_COMMON)
+            .open()?;
+
+        Ok(Self {
+            port: op,
+            default_settings_applied: Default::default(),
+        })
     }
 
     /// tries to set the module in a well known state in which set settings and mode are defined
@@ -527,24 +521,31 @@ impl Bgx13p {
 }
 
 /// searches and returns serial port devices connected via USB
-fn find_module() -> Option<Vec<SerialPortInfo>> {
-    serialport::available_ports()
-        .map(|f| {
-            f.into_iter()
-                .filter(|pi| match &pi.port_type {
-                    SerialPortType::UsbPort(n) => {
-                        trace!("scanned module: {:?}", &n);
-                        if let Some(m) = &n.manufacturer {
-                            m.contains("Silicon Labs") || m.contains("Cygnal") || m.contains("CP21")
+fn find_module() -> Result<Vec<SerialPortInfo>> {
+    Ok(serialport::available_ports().map(|f| {
+        f.into_iter()
+            .filter(|pi| match &pi.port_type {
+                SerialPortType::UsbPort(n) => {
+                    trace!("scanned module: {:?}", &n);
+                    if let Some(m) = &n.manufacturer {
+                        if m.contains("Silicon Labs") || m.contains("Cygnal") || m.contains("CP21")
+                        {
+                            true
                         } else {
+                            warn!(
+                                "Found UsbPort but manufacturer string {} didn't match for BGX",
+                                m
+                            );
                             false
                         }
+                    } else {
+                        false
                     }
-                    _ => false,
-                })
-                .collect::<Vec<_>>()
-        })
-        .ok()
+                }
+                _ => false,
+            })
+            .collect::<Vec<_>>()
+    })?)
 }
 
 struct Command;

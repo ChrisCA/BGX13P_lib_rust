@@ -4,7 +4,7 @@ use std::{thread::sleep, time::Duration};
 use BGX13P_lib_rust::*;
 
 fn main() -> Result<()> {
-    if let Some(mut bgx) = Bgx13p::new() {
+    if let Ok(mut bgx) = Bgx13p::new() {
         bgx.reach_well_known_state()?;
 
         bgx.connect("d0cf5e828506")?;
