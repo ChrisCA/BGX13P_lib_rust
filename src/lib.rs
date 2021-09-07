@@ -333,6 +333,8 @@ impl Bgx13p {
     fn read_answer(&mut self, custom_timeout: Option<Duration>) -> Result<ModuleResponse> {
         if let Some(custom_timeout) = custom_timeout {
             self.port.set_timeout(custom_timeout)?;
+        } else {
+            self.port.set_timeout(Command::TIMEOUT_COMMON)?;
         }
 
         let bytes: Vec<u8> = self
@@ -385,6 +387,7 @@ impl Bgx13p {
     /// resets the module to factory default and applies default settings
     fn apply_default_settings(&mut self) -> Result<()> {
         self.port.clear(All)?;
+        self.port.set_timeout(Duration::from_millis(500))?;
 
         let cmds: [&[u8]; 9] = [
             Command::SetModuleToMachineMode,
@@ -414,6 +417,8 @@ impl Bgx13p {
     fn skip_stream_mode(&mut self) -> Result<()> {
         debug!("Check if in stream mode...");
         self.port.clear(All)?;
+        self.port.set_timeout(Command::TIMEOUT_COMMON)?;
+
         self.write_line(b"")?;
 
         let read_from_port = String::from_utf8(
@@ -425,7 +430,7 @@ impl Bgx13p {
                 .collect::<Vec<_>>(),
         )?;
 
-        trace!("finished read from port");
+        trace!("Read from port test: {}", &read_from_port);
 
         if let Ok(until) = take_until_range("Ready\r\n").parse(read_from_port.as_str()) {
             if !until.0.is_empty() {
@@ -450,9 +455,9 @@ impl Bgx13p {
             return Ok(());
         } else {
             debug!("Probably in stream mode, try to leave...");
-            sleep(Duration::from_millis(510));
+            sleep(Duration::from_millis(600));
             self.port.write_all(Command::BreakSequence)?;
-            sleep(Duration::from_millis(510)); // min. 500 ms silence on UART for breakout sequence
+            sleep(Duration::from_millis(600)); // min. 500 ms silence on UART for breakout sequence
             self.port.clear(All)?;
 
             self.skip_stream_mode()?;
