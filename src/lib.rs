@@ -240,8 +240,19 @@ impl Bgx13p {
             info!("Found port: {}", e.port_name);
         }
 
-        let chosen_port = p.first().context("Couldn't get any first port")?;
-        let op = serialport::new(&chosen_port.port_name, 115200)
+        let chosen_port = p.first().context("Couldn't get any first port");
+        let port_name = match chosen_port {
+            Ok(p) => &p.port_name,
+            Err(e) => {
+                warn!(
+                    "Couldn't determine USB port due to: {} => try using default /dev/ttyUSB0",
+                    e
+                );
+                "/dev/ttyUSB0"
+            }
+        };
+
+        let op = serialport::new(port_name, 115200)
             .data_bits(DataBits::Eight)
             .flow_control(FlowControl::None)
             .parity(Parity::None)
@@ -535,7 +546,7 @@ fn find_module() -> Result<Vec<SerialPortInfo>> {
         .filter_map(|p| match &p.port_type {
             SerialPortType::UsbPort(n) => {
                 debug!("Found USB port: {:?}", &n);
-                
+
                 if let Some(m) = &n.manufacturer {
                     if m.contains("Silicon Labs") || m.contains("Cygnal") || m.contains("CP21") {
                         Some(p)
