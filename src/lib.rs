@@ -440,6 +440,9 @@ impl Bgx13p {
         self.port.clear(All)?;
         self.port.set_timeout(Command::TIMEOUT_COMMON)?;
 
+        // here we write two times and then read
+        // because we might have left over $$$ from an earlier command which hasn't been used as the device has not been in stream mode
+        self.write_line(b"")?;
         self.write_line(b"")?;
 
         let read_from_port = String::from_utf8(
