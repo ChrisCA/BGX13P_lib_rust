@@ -215,7 +215,7 @@ impl Bgx13p {
     /// resets the module to factory default and applies default settings
     fn apply_default_settings(&mut self) -> Result<()> {
         self.port.clear(All)?;
-        self.port.set_timeout(Command::TIMEOUT_COMMON)?;
+        self.port.set_timeout(Duration::from_millis(500))?;
 
         let cmds: [&[u8]; 9] = [
             Command::SetModuleToMachineMode,
