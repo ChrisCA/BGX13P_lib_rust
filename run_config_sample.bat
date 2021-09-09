@@ -1,1 +1,1 @@
-cargo run --example set_module_default_settings
+cargo run --example set_module_default_settings_and_scan
