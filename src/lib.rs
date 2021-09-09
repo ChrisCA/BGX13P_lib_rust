@@ -1,7 +1,8 @@
 #![allow(non_snake_case)]
 #![allow(non_upper_case_globals)]
 #![forbid(clippy::indexing_slicing)]
-use anyhow::{anyhow, Context, Error, Result};
+
+use anyhow::{anyhow, Context, Result};
 use combine::{
     between,
     parser::{
@@ -11,225 +12,33 @@ use combine::{
     },
     token,
 };
+use command::Command;
 use log::{debug, info, trace, warn};
+use scan_result::ScanResult;
 use serialport::{
     ClearBuffer::All, DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortType,
     StopBits,
 };
 use std::{
-    fmt::Display,
     io::{Read, Write},
     str::FromStr,
     thread::sleep,
     time::Duration,
 };
-use thiserror::Error;
+
+use crate::{
+    bgx_response::{ModuleResponse, ResponseCodes},
+    response_header::ResponseHeader,
+};
+
+mod bgx_response;
+mod command;
+mod response_header;
+mod scan_result;
 
 pub struct Bgx13p {
     port: Box<dyn SerialPort>,
     default_settings_applied: bool,
-}
-
-#[derive(Debug, PartialEq)]
-pub struct ScanResult {
-    pub mac: String,
-    pub friendly_name: String,
-    pub rssi: i8,
-}
-
-impl FromStr for ScanResult {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut spl = s.split_whitespace();
-
-        let rssi: i8 = spl.nth(2).context("Couldn't get rssi on 2")?.parse()?;
-        let mac = spl
-            .next()
-            .context("Couldn't get mac on 3")?
-            .replace(':', "");
-        let friendly_name = spl
-            .next()
-            .context("Couldn't get friendly_name on 4")?
-            .to_string();
-
-        Ok(Self {
-            mac,
-            friendly_name,
-            rssi,
-        })
-    }
-}
-
-#[test]
-fn test_scan_result_1() {
-    const SCAN_RESULT: &str = "R000117\r\n!  # RSSI BD_ADDR           Device Name\r\n#  1  -47 d0:cf:5e:82:85:06 LOR-8090\r\n#  2  -52 00:0d:6f:a7:a1:54 LOR-8090\r\n";
-    let lines = SCAN_RESULT.lines().skip(2);
-
-    let res1 = lines
-        .map(|f| ScanResult::from_str(f).unwrap())
-        .collect::<Vec<_>>();
-    let res2 = vec![
-        ScanResult {
-            mac: "d0cf5e828506".to_string(),
-            friendly_name: "LOR-8090".to_string(),
-            rssi: -47,
-        },
-        ScanResult {
-            mac: "000d6fa7a154".to_string(),
-            friendly_name: "LOR-8090".to_string(),
-            rssi: -52,
-        },
-    ];
-
-    assert_eq!(res1, res2);
-}
-
-#[test]
-fn test_scan_result_2() {
-    const SCAN_RESULT: &str = "#  1  -47 d0:cf:5e:82:85:06 LOR-8090";
-
-    let res1 = ScanResult::from_str(SCAN_RESULT).unwrap();
-    let res2 = ScanResult {
-        mac: "d0cf5e828506".to_string(),
-        friendly_name: "LOR-8090".to_string(),
-        rssi: -47,
-    };
-
-    assert_eq!(res1, res2);
-}
-
-#[derive(Debug, PartialEq, Error)]
-enum ResponseCodes {
-    Success,
-    CommandFailed,
-    ParseError,
-    UnknownCommand,
-    TooFewArguments,
-    TooManyArguments,
-    UnknownVariableOrOption,
-    InvalidArgument,
-    Timeout,
-    SecurityMismatch,
-}
-
-impl Display for ResponseCodes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{:?}", &self))
-    }
-}
-
-#[derive(Debug, PartialEq)]
-enum ModuleResponse {
-    DataWithHeader(ResponseHeader, Vec<u8>),
-    DataWithoutHeader(Vec<u8>),
-}
-
-impl From<u8> for ResponseCodes {
-    fn from(value: u8) -> Self {
-        match value {
-            0 => ResponseCodes::Success,
-            1 => ResponseCodes::CommandFailed,
-            2 => ResponseCodes::ParseError,
-            3 => ResponseCodes::UnknownCommand,
-            4 => ResponseCodes::TooFewArguments,
-            5 => ResponseCodes::TooManyArguments,
-            6 => ResponseCodes::UnknownVariableOrOption,
-            7 => ResponseCodes::InvalidArgument,
-            8 => ResponseCodes::Timeout,
-            9 => ResponseCodes::SecurityMismatch,
-            _ => unreachable!(),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-struct ResponseHeader {
-    pub response_code: ResponseCodes,
-    pub length: u16,
-}
-
-impl FromStr for ResponseHeader {
-    type Err = Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        // typical header -> R000117\r\n but R and newline should already been removed by the parser
-
-        if s.len() != 6 {
-            return Err(anyhow!("Header code lenght is != 6"));
-        }
-
-        Ok(Self {
-            response_code: s
-                .get(..1)
-                .context("Couldn't get code number in header")?
-                .parse::<u8>()?
-                .into(),
-            length: s
-                .get(1..6)
-                .context("Couldn't get length numbers in header")?
-                .parse::<u16>()?,
-        })
-    }
-}
-
-#[test]
-fn test_response_header_1() {
-    const HEADER: &str = "000009";
-
-    let h = ResponseHeader::from_str(HEADER).unwrap();
-    let h2 = ResponseHeader {
-        response_code: ResponseCodes::Success,
-        length: 9,
-    };
-
-    assert_eq!(h, h2);
-}
-
-#[test]
-#[should_panic]
-fn test_response_header_2() {
-    const HEADER: &str = "000010";
-
-    let h = ResponseHeader::from_str(HEADER).unwrap();
-    let h2 = ResponseHeader {
-        response_code: ResponseCodes::Success,
-        length: 9,
-    };
-
-    assert_eq!(h, h2);
-}
-
-#[test]
-#[should_panic]
-fn test_response_header_3() {
-    const HEADER: &str = "00009";
-
-    let _ = ResponseHeader::from_str(HEADER).unwrap();
-}
-
-#[test]
-#[should_panic]
-fn test_response_header_4() {
-    const HEADER: &str = "RR0009";
-
-    let _ = ResponseHeader::from_str(HEADER).unwrap();
-}
-
-#[test]
-#[should_panic]
-fn test_response_header_5() {
-    const HEADER: &str = "R10009";
-
-    let _ = ResponseHeader::from_str(HEADER).unwrap();
-}
-
-#[test]
-#[should_panic]
-fn test_response_header_6() {
-    const HEADER: &str = "2120009";
-
-    let _ = ResponseHeader::from_str(HEADER).unwrap();
 }
 
 impl Bgx13p {
@@ -544,6 +353,7 @@ fn find_module() -> Result<Vec<SerialPortInfo>> {
     let ports = serialport::available_ports()?;
     trace!("Detected the following ports: {:?}", &ports);
 
+    #[allow(clippy::unnecessary_filter_map)]
     let ports = ports
         .into_iter()
         .filter_map(|p| match &p.port_type {
@@ -569,40 +379,4 @@ fn find_module() -> Result<Vec<SerialPortInfo>> {
         .collect::<Vec<_>>();
 
     Ok(ports)
-}
-
-struct Command;
-
-impl Command {
-    pub const GetVersion: &'static [u8; 3] = b"ver";
-    pub fn Connect(mac: &str) -> Vec<u8> {
-        format!("con {} 1", mac).as_bytes().to_vec()
-    }
-    pub const Disconnect: &'static [u8; 3] = b"dct";
-    pub const Save: &'static [u8; 4] = b"save";
-    pub const AdvertiseHighDuration: &'static [u8; 14] = b"set bl v h d 0";
-    pub const BLEPHYMultiplexFalse: &'static [u8; 12] = b"set bl p m 0";
-    pub const BLEPHYPreference1M: &'static [u8; 13] = b"set bl p p 1m";
-    pub const BLEEncryptionPairingAny: &'static [u8; 14] = b"set bl e p any";
-    pub const SystemRemoteCommandingFalse: &'static [u8; 12] = b"set sy r e 0";
-    pub const BreakSequence: &'static [u8; 3] = b"$$$";
-    pub const SetDeviceName: &'static [u8; 21] = b"set sy d n JugglerBGX";
-    pub const SetModuleToMachineMode: &'static [u8; 18] = b"set sy c m machine";
-    pub const ClearAllBondings: &'static [u8; 4] = b"clrb";
-    pub const LINEBREAK: &'static [u8; 2] = b"\r\n";
-    /*
-    R000009\r\n
-    Success\r\n
-    */
-    pub const SCAN: &'static [u8; 4] = b"scan";
-    /*
-    R000117\r\n
-    !  # RSSI BD_ADDR           Device Name\r\n
-    #  1  -47 d0:cf:5e:82:85:06 LOR-8090\r\n
-    #  2  -52 00:0d:6f:a7:a1:54 LOR-8090\r\n
-    */
-    pub const SCAN_RESULTS: &'static [u8; 12] = b"scan results";
-    pub const TIMEOUT_COMMON: Duration = Duration::from_millis(50);
-    pub const TIMEOUT_CONNECT: Duration = Duration::from_millis(1100);
-    pub const TIMEOUT_DISCONNECT: Duration = Duration::from_millis(100);
 }
