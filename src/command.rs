@@ -33,7 +33,7 @@ impl Command {
     #  2  -52 00:0d:6f:a7:a1:54 LOR-8090\r\n
     */
     pub const SCAN_RESULTS: &'static [u8; 12] = b"scan results";
-    pub const TIMEOUT_COMMON: Duration = Duration::from_millis(10);
+    pub const TIMEOUT_COMMON: Duration = Duration::from_millis(20);
     // change this to automatically change the BGX scan timeout and the read answer timeout
     pub const TIMEOUT_CONNECT_BGX_INTERN: u64 = 2;
     // change this to modify the timeout for the read answer timeout

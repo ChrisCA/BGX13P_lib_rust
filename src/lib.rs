@@ -215,7 +215,7 @@ impl Bgx13p {
     /// resets the module to factory default and applies default settings
     fn apply_default_settings(&mut self) -> Result<()> {
         self.port.clear(All)?;
-        self.port.set_timeout(Duration::from_millis(500))?;
+        self.port.set_timeout(Command::TIMEOUT_COMMON)?;
 
         let cmds: [&[u8]; 9] = [
             Command::SetModuleToMachineMode,
@@ -235,7 +235,6 @@ impl Bgx13p {
             info!("Successfully applied setting");
         }
 
-        self.port.set_timeout(Command::TIMEOUT_COMMON)?;
         let bytes: Vec<u8> = self
             .port
             .as_mut()
