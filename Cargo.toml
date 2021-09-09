@@ -11,7 +11,7 @@ serialport = "4.0"
 log = "0.4"
 anyhow = "1.0.41"
 thiserror = "1.0.25"
-combine = "4.6.0"
+combine = "4.6.1"
 
 [dev-dependencies]
 simple_logger = "1.13.0"
