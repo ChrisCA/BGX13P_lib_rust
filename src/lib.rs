@@ -221,8 +221,8 @@ impl Bgx13p {
             Command::SetModuleToMachineMode,
             Command::SystemRemoteCommandingFalse,
             Command::AdvertiseHighDuration,
-            Command::BLEEncryptionPairingAny,
-            Command::BLEPHYMultiplexFalse,
+            Command::BLEEncryptionPairingAny, // either this takes longer
+            Command::BLEPHYMultiplexFalse,    // or this fails for some reasons
             Command::BLEPHYPreference1M,
             Command::SetDeviceName,
             Command::ClearAllBondings,
@@ -231,7 +231,7 @@ impl Bgx13p {
 
         for cmd in cmds.iter() {
             self.write_line(cmd)?;
-            sleep(Duration::from_millis(50)); // here we do not use a read answer as it use rad until timeout and we do not know whether the header is already activated
+            sleep(Duration::from_millis(200)); // here we do not use a read answer as it use rad until timeout and we do not know whether the header is already activated
             info!("Successfully applied setting");
         }
 
