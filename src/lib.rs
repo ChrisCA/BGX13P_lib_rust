@@ -78,6 +78,12 @@ impl Bgx13p {
             return Ok(());
         }
 
+        // print FW
+        self.write_line(Command::GetVersion)?;
+        let answer = self.read(None)?;
+        let answer = std::str::from_utf8(&answer)?;
+        debug!("FW version: {}", answer);
+
         self.skip_stream_mode()?;
         self.apply_default_settings()?;
 
