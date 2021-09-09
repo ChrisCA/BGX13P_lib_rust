@@ -5,11 +5,7 @@
 use anyhow::{anyhow, Context, Result};
 use combine::{
     between,
-    parser::{
-        char::string,
-        range::{take, take_until_range},
-        Parser,
-    },
+    parser::{char::string, range::take, Parser},
     token,
 };
 use command::Command;
@@ -107,11 +103,11 @@ impl Bgx13p {
 
         self.write_line(Command::SCAN)?;
         self.read_answer(None)?;
-        dbg!("start scan");
+        debug!("start scan");
         sleep(Duration::from_secs(10));
         self.write_line(Command::SCAN_RESULTS)?;
-        let ans = self.read_answer(None)?;
-        dbg!("stop scan");
+        let ans = self.read_answer(Some(Duration::from_millis(20)))?;
+        debug!("stop scan");
 
         match ans {
             ModuleResponse::DataWithHeader(_, ans) => {
@@ -175,7 +171,9 @@ impl Bgx13p {
             .map(|f| f.expect("Couldn't get byte"))
             .collect();
 
-        self.port.set_timeout(Command::TIMEOUT_COMMON)?;
+        if custom_timeout.is_some() {
+            self.port.set_timeout(Command::TIMEOUT_COMMON)?;
+        }
         self.port.clear(All)?;
 
         if !bytes.is_empty() {
@@ -237,7 +235,26 @@ impl Bgx13p {
             info!("Successfully applied setting");
         }
 
-        sleep(Duration::from_millis(200));
+        self.port.set_timeout(Command::TIMEOUT_COMMON)?;
+        let bytes: Vec<u8> = self
+            .port
+            .as_mut()
+            .bytes()
+            .take_while(|f| f.is_ok())
+            .map(|f| f.expect("Couldn't get byte"))
+            .collect();
+
+        let answer = std::str::from_utf8(&bytes)?;
+        trace!("Applied settings read: {}", answer);
+
+        let count_success = answer.lines().filter(|l| l == &"Success").count();
+        if count_success != 9 {
+            return Err(anyhow!(
+                "Only got {} times success instead of expected 9 times",
+                count_success
+            ));
+        }
+
         self.port.clear(All)?;
 
         Ok(())
@@ -254,45 +271,32 @@ impl Bgx13p {
         self.write_line(b"")?;
         self.write_line(b"")?;
 
-        let read_from_port = String::from_utf8(
-            self.port
-                .as_mut()
-                .bytes()
-                .take_while(|f| f.is_ok())
-                .map(|f| f.expect("Couldn't get byte"))
-                .collect::<Vec<_>>(),
-        )?;
+        let read_from_port = self
+            .port
+            .as_mut()
+            .bytes()
+            .take_while(|f| f.is_ok())
+            .map(|f| f.expect("Couldn't get byte"))
+            .collect::<Vec<_>>();
+        let answer = std::str::from_utf8(&read_from_port)?;
 
-        trace!("Read from port test: {}", &read_from_port);
+        trace!("Read from port test: {:?}", answer);
 
-        if let Ok(until) = take_until_range("Ready\r\n").parse(read_from_port.as_str()) {
-            if !until.0.is_empty() {
-                trace!(
-                    "Found leftover {:?} before ready in getting at stream mode skipping",
-                    until.0
-                );
-            }
-
-            if let Some(after_ready) = until.1.get(7..) {
-                if !after_ready.is_empty() {
-                    trace!(
-                        "Found leftover {:?} after ready in getting at stream mode skipping",
-                        after_ready
-                    );
-                }
-            }
+        if !answer.is_empty() {
+            trace!("Got one or more Ready --> not in stream mode");
 
             // do not use common read answer method here as we can not always relying on getting a header due to a module being configured properly
             self.port.clear(All)?;
-            debug!("Didn't need to skip stream mode");
+
             return Ok(());
         } else {
             debug!("Probably in stream mode, try to leave...");
-            sleep(Duration::from_millis(600));
+            sleep(Duration::from_millis(510));
             self.port.write_all(Command::BreakSequence)?;
-            sleep(Duration::from_millis(600)); // min. 500 ms silence on UART for breakout sequence
+            sleep(Duration::from_millis(510)); // min. 500 ms silence on UART for breakout sequence
             self.port.clear(All)?;
 
+            debug!("Recheck if in stream mode...");
             self.skip_stream_mode()?;
         }
 
