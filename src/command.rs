@@ -5,7 +5,9 @@ pub(crate) struct Command;
 impl Command {
     pub const GetVersion: &'static [u8; 3] = b"ver";
     pub fn Connect(mac: &str) -> Vec<u8> {
-        format!("con {} 1", mac).as_bytes().to_vec()
+        format!("con {} {}", mac, Command::TIMEOUT_CONNECT_BGX_INTERN)
+            .as_bytes()
+            .to_vec()
     }
     pub const Disconnect: &'static [u8; 3] = b"dct";
     pub const Save: &'static [u8; 4] = b"save";
@@ -31,7 +33,11 @@ impl Command {
     #  2  -52 00:0d:6f:a7:a1:54 LOR-8090\r\n
     */
     pub const SCAN_RESULTS: &'static [u8; 12] = b"scan results";
-    pub const TIMEOUT_COMMON: Duration = Duration::from_millis(50);
-    pub const TIMEOUT_CONNECT: Duration = Duration::from_millis(1100);
+    pub const TIMEOUT_COMMON: Duration = Duration::from_millis(10);
+    // change this to automatically change the BGX scan timeout and the read answer timeout
+    pub const TIMEOUT_CONNECT_BGX_INTERN: u64 = 2;
+    // change this to modify the timeout for the read answer timeout
+    pub const TIMEOUT_CONNECT: Duration =
+        Duration::from_millis(100 + Command::TIMEOUT_CONNECT_BGX_INTERN * 1000);
     pub const TIMEOUT_DISCONNECT: Duration = Duration::from_millis(100);
 }
