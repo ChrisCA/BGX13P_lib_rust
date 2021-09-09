@@ -5,7 +5,12 @@
 use anyhow::{anyhow, Context, Result};
 use combine::{
     any, between,
-    parser::{char::string, range::take, repeat::repeat_skip_until, Parser},
+    parser::{
+        char::string,
+        range::{take, take_until_range},
+        repeat::repeat_skip_until,
+        Parser,
+    },
     token,
 };
 use command::Command;
@@ -105,7 +110,7 @@ impl Bgx13p {
 
         // parse FW version and check if compatible
         // atm only BGX13P.1.2.2738.2-1524-2738 is considered
-        let until_bgx = repeat_skip_until(any(), string("BGX13P.")).parse(answer)?.1; // version number
+        let until_bgx = parse_firmware_version(answer)?;
 
         self.apply_default_settings()?;
 
@@ -388,6 +393,23 @@ impl Bgx13p {
 
         Ok(())
     }
+}
+
+fn parse_firmware_version(s: &str) -> Result<&str> {
+    let first = repeat_skip_until(any(), string("BGX13P.")).parse(s)?.1; // version number
+    let mid = take_until_range("\r\n").parse(first)?.0;
+
+    Ok(mid)
+}
+
+#[test]
+fn parse_firmware_version_1() {
+    let input = "XXXXXXBGX13P.1.2.2738.2-1524-2738\r\n";
+    let result = "BGX13P.1.2.2738.2-1524-2738";
+
+    let res = parse_firmware_version(input).unwrap();
+
+    assert_eq!(res, result)
 }
 
 /// searches and returns serial port devices connected via USB
