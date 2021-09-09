@@ -4,8 +4,8 @@
 
 use anyhow::{anyhow, Context, Result};
 use combine::{
-    between,
-    parser::{char::string, range::take, Parser},
+    any, between,
+    parser::{char::string, range::take, repeat::repeat_skip_until, Parser},
     token,
 };
 use command::Command;
@@ -71,20 +71,42 @@ impl Bgx13p {
         })
     }
 
-    /// tries to set the module in a well known state in which set settings and mode are defined
+    /**
+        Try to reach a well known state in which settings for further usage are set.
+        This will also bring the module into the Command Mode and check for a compatible FW version.
+    */
     pub fn reach_well_known_state(&mut self) -> Result<()> {
         // early return if we are already in a well known state
         if self.default_settings_applied {
             return Ok(());
         }
 
-        // print FW
+        // first try to request the FW version within a certain timeout
         self.write_line(Command::GetVersion)?;
-        let answer = self.read(None)?;
-        let answer = std::str::from_utf8(&answer)?;
-        debug!("FW version: {}", answer);
 
-        self.skip_stream_mode()?;
+        let answer: Vec<u8> = self
+            .port
+            .as_mut()
+            .bytes()
+            .take_while(|f| f.is_ok())
+            .map(|f| f.expect("Couldn't get byte"))
+            .collect();
+
+        // if this is empty we assume that the device is in stream mode
+        // TODO: catch the case that the default USB0 is any other device which does not answer
+        if answer.is_empty() {
+            self.send_leave_stream_mode_signal()?;
+            self.reach_well_known_state()?;
+
+            return Ok(());
+        }
+        let answer = std::str::from_utf8(&answer)?;
+        trace!("FW version feedback: {}", answer);
+
+        // parse FW version and check if compatible
+        // atm only BGX13P.1.2.2738.2-1524-2738 is considered
+        let until_bgx = repeat_skip_until(any(), string("BGX13P.")).parse(answer)?.1; // version number
+
         self.apply_default_settings()?;
 
         // verify success
@@ -183,10 +205,12 @@ impl Bgx13p {
         self.port.clear(All)?;
 
         if !bytes.is_empty() {
-            if let Ok(bs) = String::from_utf8(bytes.clone()) {
+            if let Ok(bs) = std::str::from_utf8(&bytes) {
                 debug!("BGX answered: {:?}", &bs);
 
-                let header_str = between(token('R'), string("\r\n"), take::<&str>(6)).parse(&bs)?;
+                let header_str = between(token('R'), string("\r\n"), take::<&str>(6)).parse(bs)?;
+
+                // let header_str = header_str?;
                 trace!("Should be string for header: {:?}", header_str.0);
                 let h = ResponseHeader::from_str(header_str.0)?;
                 trace!("Parsed header: {:?}", h);
@@ -304,6 +328,15 @@ impl Bgx13p {
             debug!("Recheck if in stream mode...");
             self.skip_stream_mode()?;
         }
+
+        Ok(())
+    }
+
+    fn send_leave_stream_mode_signal(&mut self) -> Result<()> {
+        sleep(Duration::from_millis(510));
+        self.port.write_all(Command::BreakSequence)?;
+        sleep(Duration::from_millis(510)); // min. 500 ms silence on UART for breakout sequence
+        self.port.clear(All)?;
 
         Ok(())
     }
