@@ -414,7 +414,8 @@ impl Bgx13p {
 }
 
 fn parse_fw_ver(s: &str) -> Result<&str> {
-    let first = repeat_skip_until(any(), string("BGX13P.")).parse(s)?.1; // version number
+    // do not match on BGX13P. instead of BGX13 here as this reported name is not consistent over older versions
+    let first = repeat_skip_until(any(), string("BGX13")).parse(s)?.1;
     let mid = take_until_range("\r\n").parse(first)?.0;
 
     Ok(mid)
