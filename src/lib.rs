@@ -110,12 +110,14 @@ impl Bgx13p {
 
         // parse FW version and check if compatible
         // atm only BGX13P.1.2.2738.2-1524-2738 is considered
-        let _until_bgx = parse_firmware_version(answer)?;
+        let _until_bgx = parse_fw_ver(answer).context("FW version couldn't be parsed")?;
+        info!("Found FW: {}", _until_bgx);
+        let other_fw = _until_bgx != "BGX13P.1.2.2738.2-1524-2738";
 
-        self.apply_default_settings()?;
+        self.apply_default_settings(other_fw)?;
 
         // verify success
-        self.write_line(Command::GetVersion)?; // TODO: maybe do this later just by sending a line break and check for a ready
+        self.write_line(b"")?;
         let answer = self.read_answer(None)?;
 
         if let ModuleResponse::DataWithHeader(n, _) = answer {
@@ -127,7 +129,7 @@ impl Bgx13p {
             }
         }
 
-        Err(anyhow!("Couldn't reach a well known case"))
+        Err(anyhow!("Couldn't reach a well known state"))
     }
 
     /// scans for nearby BGX modules
@@ -248,23 +250,36 @@ impl Bgx13p {
     }
 
     /// resets the module to factory default and applies default settings
-    fn apply_default_settings(&mut self) -> Result<()> {
+    fn apply_default_settings(&mut self, expect_old_fw: bool) -> Result<()> {
         self.port.clear(All)?;
         self.port.set_timeout(Duration::from_millis(500))?;
 
-        let cmds: [&[u8]; 9] = [
-            Command::SetModuleToMachineMode,
-            Command::SystemRemoteCommandingFalse,
-            Command::AdvertiseHighDuration,
-            Command::BLEEncryptionPairingAny, // either this takes longer
-            Command::BLEPHYMultiplexFalse,    // or this fails for some reasons
-            Command::BLEPHYPreference1M,
-            Command::SetDeviceName,
-            Command::ClearAllBondings,
-            Command::Save,
-        ];
+        let cmds: Vec<&[u8]> = if expect_old_fw {
+            vec![
+                Command::SetModuleToMachineMode,
+                Command::SystemRemoteCommandingFalse,
+                Command::AdvertiseHighDuration,
+                Command::BLEEncryptionPairingAny,
+                Command::BLEPHYPreference1M,
+                Command::SetDeviceName,
+                Command::ClearAllBondings,
+                Command::Save,
+            ]
+        } else {
+            vec![
+                Command::SetModuleToMachineMode,
+                Command::SystemRemoteCommandingFalse,
+                Command::AdvertiseHighDuration,
+                Command::BLEEncryptionPairingAny,
+                Command::BLEPHYMultiplexFalse,
+                Command::BLEPHYPreference1M,
+                Command::SetDeviceName,
+                Command::ClearAllBondings,
+                Command::Save,
+            ]
+        };
 
-        for cmd in cmds.iter() {
+        for cmd in cmds {
             self.write_line(cmd)?;
             sleep(Duration::from_millis(200)); // here we do not use a read answer as it use rad until timeout and we do not know whether the header is already activated
             info!("Successfully applied setting");
@@ -282,10 +297,13 @@ impl Bgx13p {
         trace!("Applied settings read: {}", answer);
 
         let count_success = answer.lines().filter(|l| l == &"Success").count();
-        if count_success != 9 {
+        let expected_success = if expect_old_fw { 8 } else { 9 };
+
+        if count_success != expected_success {
             return Err(anyhow!(
-                "Only got {} times success instead of expected 9 times",
-                count_success
+                "Only got {} times success instead of expected {} times",
+                count_success,
+                expected_success
             ));
         }
 
@@ -395,8 +413,9 @@ impl Bgx13p {
     }
 }
 
-fn parse_firmware_version(s: &str) -> Result<&str> {
-    let first = repeat_skip_until(any(), string("BGX13P.")).parse(s)?.1; // version number
+fn parse_fw_ver(s: &str) -> Result<&str> {
+    // do not match on BGX13P. instead of BGX13 here as this reported name is not consistent over older versions
+    let first = repeat_skip_until(any(), string("BGX13")).parse(s)?.1;
     let mid = take_until_range("\r\n").parse(first)?.0;
 
     Ok(mid)
@@ -404,12 +423,11 @@ fn parse_firmware_version(s: &str) -> Result<&str> {
 
 #[test]
 fn parse_firmware_version_1() {
-    let input = "XXXXXXBGX13P.1.2.2738.2-1524-2738\r\n";
-    let result = "BGX13P.1.2.2738.2-1524-2738";
+    let input1 = "XXXXXXBGX13P.1.2.2738.2-1524-2738\r\n";
+    let input2 = "BGX13P.1.2.2738.2-1524-2738\r\n";
 
-    let res = parse_firmware_version(input).unwrap();
-
-    assert_eq!(res, result)
+    assert_eq!(parse_fw_ver(input1).unwrap(), "BGX13P.1.2.2738.2-1524-2738");
+    assert_eq!(parse_fw_ver(input2).unwrap(), "BGX13P.1.2.2738.2-1524-2738");
 }
 
 /// searches and returns serial port devices connected via USB
