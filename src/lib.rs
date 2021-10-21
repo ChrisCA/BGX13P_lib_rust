@@ -110,7 +110,7 @@ impl Bgx13p {
 
         // parse FW version and check if compatible
         // atm only BGX13P.1.2.2738.2-1524-2738 is considered
-        let until_bgx = parse_firmware_version(answer)?;
+        let _until_bgx = parse_firmware_version(answer)?;
 
         self.apply_default_settings()?;
 
