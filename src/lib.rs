@@ -36,6 +36,7 @@ mod bgx_response;
 mod command;
 mod response_header;
 mod scan_result;
+mod state_machine;
 
 pub struct Bgx13p {
     port: Box<dyn SerialPort>,
