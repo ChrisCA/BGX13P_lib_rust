@@ -21,6 +21,7 @@ impl Command {
     pub const SetModuleToMachineMode: &'static [u8; 18] = b"set sy c m machine";
     pub const ClearAllBondings: &'static [u8; 4] = b"clrb";
     pub const LINEBREAK: &'static [u8; 2] = b"\r\n";
+    pub const ConParams: &'static [u8; 10] = b"con params";
     /*
     R000009\r\n
     Success\r\n
@@ -33,11 +34,12 @@ impl Command {
     #  2  -52 00:0d:6f:a7:a1:54 LOR-8090\r\n
     */
     pub const SCAN_RESULTS: &'static [u8; 12] = b"scan results";
-    pub const TIMEOUT_COMMON: Duration = Duration::from_millis(20);
+    pub const TIMEOUT_COMMON: Duration = Duration::from_millis(30);
     // change this to automatically change the BGX scan timeout and the read answer timeout
     pub const TIMEOUT_CONNECT_BGX_INTERN: u64 = 2;
     // change this to modify the timeout for the read answer timeout
     pub const TIMEOUT_CONNECT: Duration =
         Duration::from_millis(100 + Command::TIMEOUT_CONNECT_BGX_INTERN * 1000);
     pub const TIMEOUT_DISCONNECT: Duration = Duration::from_millis(100);
+    pub const TIMEOUT_SETTINGS: Duration = Duration::from_millis(500);
 }

@@ -31,10 +31,9 @@ fn main() -> Result<()> {
                 sleep(Duration::from_millis(100));
 
                 debug!("Try to disconnect from {}", m);
-                if bgx.disconnect().is_ok() {
-                    debug!("Disconnected from {}", m);
-                } else {
-                    debug!("Couldn't disconnected from {}", m);
+                match bgx.disconnect() {
+                    Ok(_) => debug!("Disconnected from {}", m),
+                    Err(e) => debug!("Couldn't disconnected from {} because of {:?}", m, e),
                 }
                 sleep(Duration::from_millis(100));
             }

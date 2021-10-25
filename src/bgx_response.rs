@@ -43,6 +43,6 @@ impl From<u8> for ResponseCodes {
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum ModuleResponse {
-    DataWithHeader(ResponseHeader, Vec<u8>),
+    DataWithHeader(ResponseHeader, String),
     DataWithoutHeader(Vec<u8>),
 }

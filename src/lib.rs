@@ -17,8 +17,7 @@ use command::Command;
 use log::{debug, info, trace, warn};
 use scan_result::ScanResult;
 use serialport::{
-    ClearBuffer::All, DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortType,
-    StopBits,
+    DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortType, StopBits,
 };
 use std::{
     io::{Read, Write},
@@ -86,8 +85,10 @@ impl Bgx13p {
             return Ok(());
         }
 
+        self.switch_to_command_mode()?;
+
         // first try to request the FW version within a certain timeout
-        self.write_line(Command::GetVersion)?;
+        self.write_line(Command::GetVersion, None)?;
 
         let answer: Vec<u8> = self
             .port
@@ -97,14 +98,6 @@ impl Bgx13p {
             .map(|f| f.expect("Couldn't get byte"))
             .collect();
 
-        // if this is empty we assume that the device is in stream mode
-        // TODO: catch the case that the default USB0 is any other device which does not answer
-        if answer.is_empty() {
-            self.send_leave_stream_mode_signal()?;
-            self.reach_well_known_state()?;
-
-            return Ok(());
-        }
         let answer = std::str::from_utf8(&answer)?;
         trace!("FW version feedback: {}", answer);
 
@@ -117,7 +110,7 @@ impl Bgx13p {
         self.apply_default_settings(other_fw)?;
 
         // verify success
-        self.write_line(b"")?;
+        self.write_line(b"", None)?;
         let answer = self.read_answer(None)?;
 
         if let ModuleResponse::DataWithHeader(n, _) = answer {
@@ -132,21 +125,23 @@ impl Bgx13p {
         Err(anyhow!("Couldn't reach a well known state"))
     }
 
-    /// scans for nearby BGX modules
+    /// Scans for nearby BGX modules.
+    /// Module must not be connect or scan will fail.
     pub fn scan(&mut self) -> Result<Vec<ScanResult>> {
-        self.skip_stream_mode()?;
+        self.switch_to_command_mode()?;
 
-        self.write_line(Command::SCAN)?;
+        self.disconnect()?;
+
+        self.write_line(Command::SCAN, None)?;
         self.read_answer(None)?;
         debug!("start scan");
         sleep(Duration::from_secs(10));
-        self.write_line(Command::SCAN_RESULTS)?;
-        let ans = self.read_answer(Some(Duration::from_millis(20)))?;
+        self.write_line(Command::SCAN_RESULTS, None)?;
+        let ans = self.read_answer(None)?;
         debug!("stop scan");
 
         match ans {
             ModuleResponse::DataWithHeader(_, ans) => {
-                let ans = String::from_utf8(ans)?;
                 return Ok(ans
                     .lines()
                     .filter_map(|f| ScanResult::from_str(f).ok())
@@ -159,19 +154,21 @@ impl Bgx13p {
     }
 
     /// writes a command to the module which ends with \r\n and errors on timeout
-    fn write_line(&mut self, cmd: &[u8]) -> Result<()> {
-        let mut command = cmd.to_vec();
-        command.extend(Command::LINEBREAK);
+    fn write_line(&mut self, cmd: &[u8], custom_timeout: Option<Duration>) -> Result<()> {
+        let command = [cmd, Command::LINEBREAK].concat();
 
-        self.port.write_all(&command)?;
+        self.write(&command, custom_timeout)?;
 
         Ok(())
     }
 
     /// reads all available bytes from the module
     pub fn read(&mut self, custom_timeout: Option<Duration>) -> Result<Vec<u8>> {
-        match self.read_answer(custom_timeout)?{
-            ModuleResponse::DataWithHeader(h, _) => return  Err(anyhow!("Got data with header {:?} but expected passthrough payload from BGX module. This shouldn't happen normally.",h)),
+        match self.read_answer(custom_timeout)? {
+            ModuleResponse::DataWithHeader(h, _) => Err(anyhow!(
+                "Got data with header {:?} but expected passthrough payload from BGX module.",
+                h
+            )),
             ModuleResponse::DataWithoutHeader(r) => Ok(r),
         }
     }
@@ -180,13 +177,11 @@ impl Bgx13p {
     pub fn write(&mut self, payload: &[u8], custom_timeout: Option<Duration>) -> Result<()> {
         if let Some(custom_timeout) = custom_timeout {
             self.port.set_timeout(custom_timeout)?;
+        } else {
+            self.port.set_timeout(Command::TIMEOUT_COMMON)?;
         }
 
         self.port.write_all(payload)?;
-
-        if custom_timeout.is_some() {
-            self.port.set_timeout(Command::TIMEOUT_COMMON)?;
-        }
 
         Ok(())
     }
@@ -206,11 +201,6 @@ impl Bgx13p {
             .map(|f| f.expect("Couldn't get byte"))
             .collect();
 
-        if custom_timeout.is_some() {
-            self.port.set_timeout(Command::TIMEOUT_COMMON)?;
-        }
-        self.port.clear(All)?;
-
         if !bytes.is_empty() {
             if let Ok(bs) = std::str::from_utf8(&bytes) {
                 debug!("BGX answered: {:?}", &bs);
@@ -227,13 +217,12 @@ impl Bgx13p {
                 R000029\r\n
                 BGX13P.1.2.2738.2-1524-2738\r\n
                 */
-                let answer = bytes
-                    .get(9..h.length as usize + 9)
-                    .context(format!(
-                        "Couldn't get {} bytes as it should be possible declared in header",
-                        h.length
-                    ))?
-                    .to_vec();
+                let answer = bytes.get(9..h.length as usize + 9).context(format!(
+                    "Couldn't get {} bytes as it should be possible declared in header",
+                    h.length
+                ))?;
+                let answer = std::str::from_utf8(answer)?.to_string();
+
                 Ok(ModuleResponse::DataWithHeader(h, answer))
             } else {
                 Ok(ModuleResponse::DataWithoutHeader(bytes))
@@ -251,8 +240,7 @@ impl Bgx13p {
 
     /// resets the module to factory default and applies default settings
     fn apply_default_settings(&mut self, expect_old_fw: bool) -> Result<()> {
-        self.port.clear(All)?;
-        self.port.set_timeout(Duration::from_millis(500))?;
+        self.switch_to_command_mode()?;
 
         let cmds: Vec<&[u8]> = if expect_old_fw {
             vec![
@@ -280,7 +268,8 @@ impl Bgx13p {
         };
 
         for cmd in cmds {
-            self.write_line(cmd)?;
+            // longer timeout as the "save" command may take longer
+            self.write_line(cmd, Some(Command::TIMEOUT_SETTINGS))?;
             sleep(Duration::from_millis(200)); // here we do not use a read answer as it use rad until timeout and we do not know whether the header is already activated
             info!("Successfully applied setting");
         }
@@ -307,21 +296,27 @@ impl Bgx13p {
             ));
         }
 
-        self.port.clear(All)?;
-
         Ok(())
     }
 
     /// makes sure the module is not in stream mode anymore, should be ran before any other control commands should be send to the module
-    fn skip_stream_mode(&mut self) -> Result<()> {
+    fn switch_to_command_mode(&mut self) -> Result<()> {
         debug!("Check if in stream mode...");
-        self.port.clear(All)?;
         self.port.set_timeout(Command::TIMEOUT_COMMON)?;
+
+        // clear buffer to make sure what come later is nothing historical
+        let _ = self
+            .port
+            .as_mut()
+            .bytes()
+            .take_while(|f| f.is_ok())
+            .map(|f| f.expect("Couldn't get byte"))
+            .collect::<Vec<_>>();
 
         // here we write two times and then read
         // because we might have left over $$$ from an earlier command which hasn't been used as the device has not been in stream mode
-        self.write_line(b"")?;
-        self.write_line(b"")?;
+        self.write_line(b"", None)?;
+        self.write_line(b"", None)?;
 
         let read_from_port = self
             .port
@@ -330,36 +325,34 @@ impl Bgx13p {
             .take_while(|f| f.is_ok())
             .map(|f| f.expect("Couldn't get byte"))
             .collect::<Vec<_>>();
-        let answer = std::str::from_utf8(&read_from_port)?;
 
-        trace!("Read from port test: {:?}", answer);
-
-        if !answer.is_empty() {
+        if !read_from_port.is_empty() {
             trace!("Got one or more Ready --> not in stream mode");
 
             // do not use common read answer method here as we can not always relying on getting a header due to a module being configured properly
-            self.port.clear(All)?;
+            let answer = std::str::from_utf8(&read_from_port)?;
+            trace!("Read from port test: {:?}", answer);
 
             return Ok(());
         } else {
-            debug!("Probably in stream mode, try to leave...");
-            sleep(Duration::from_millis(510));
+            debug!("No answer, expect stream mode, try to leave...");
+            sleep(Duration::from_millis(550));
             self.port.write_all(Command::BreakSequence)?;
-            sleep(Duration::from_millis(510)); // min. 500 ms silence on UART for breakout sequence
-            self.port.clear(All)?;
+            sleep(Duration::from_millis(550)); // min. 500 ms silence on UART for breakout sequence
+
+            let _ = self
+                .port
+                .as_mut()
+                .bytes()
+                .take_while(|f| f.is_ok())
+                .map(|f| f.expect("Couldn't get byte"))
+                .collect::<Vec<_>>();
 
             debug!("Recheck if in stream mode...");
-            self.skip_stream_mode()?;
+            self.switch_to_command_mode()?;
         }
 
-        Ok(())
-    }
-
-    fn send_leave_stream_mode_signal(&mut self) -> Result<()> {
-        sleep(Duration::from_millis(510));
-        self.port.write_all(Command::BreakSequence)?;
-        sleep(Duration::from_millis(510)); // min. 500 ms silence on UART for breakout sequence
-        self.port.clear(All)?;
+        debug!("Stream mode left");
 
         Ok(())
     }
@@ -367,9 +360,11 @@ impl Bgx13p {
     /// connects to a device with a given mac,
     /// skips if already connected to the device and disconnects before connecting to a new device
     pub fn connect(&mut self, mac: &str) -> Result<()> {
-        self.skip_stream_mode()?;
+        self.switch_to_command_mode()?;
 
-        self.write_line(&Command::Connect(mac))?;
+        self.disconnect()?;
+
+        self.write_line(&Command::Connect(mac), Some(Command::TIMEOUT_CONNECT))?;
         let ans = self.read_answer(Some(Command::TIMEOUT_CONNECT))?;
 
         match ans {
@@ -379,7 +374,7 @@ impl Bgx13p {
                     Err(anyhow!("Command failed as devices where still connected but now has been disconnected"))
                 }
                 ResponseCodes::SecurityMismatch => {
-                    self.write_line(Command::ClearAllBondings)?;
+                    self.write_line(Command::ClearAllBondings, None)?;
                     if let Ok(ModuleResponse::DataWithHeader(h, _)) = self.read_answer(None) {
                         if h.response_code == ResponseCodes::Success {
                             return Err(anyhow!(
@@ -393,8 +388,12 @@ impl Bgx13p {
                     ))
                 }
                 ResponseCodes::Success => Ok(()),
+                ResponseCodes::Timeout => {
+                    Err(anyhow!("Couldn't connect to device within given time."))
+                }
                 _ => Err(anyhow!(
-                    "Error when handling connection but no plan how to handle it."
+                    "Error when handling connection but no plan how to handle it: {:?}",
+                    h
                 )),
             },
             ModuleResponse::DataWithoutHeader(_) => Err(anyhow!(
@@ -404,12 +403,51 @@ impl Bgx13p {
     }
 
     pub fn disconnect(&mut self) -> Result<()> {
-        self.skip_stream_mode()?;
+        self.switch_to_command_mode()?;
 
-        self.write_line(Command::Disconnect)?;
-        self.read_answer(Some(Command::TIMEOUT_DISCONNECT))?;
+        self.write_line(Command::ConParams, None)?;
+        let r = self.read_answer(None)?;
+        match r {
+            ModuleResponse::DataWithHeader(h, ans) => match h.response_code {
+                ResponseCodes::Success => {
+                    // sample output active connection
+                    /*
+                        R000108\r\n
+                        !  Param Value\r\n
+                        #  Addr  EC1BBD1B12A1\r\n
+                        #  Itvl  12\r\n
+                        #  Mtu   250\r\n
+                        #  Phy   1m\r\n
+                        #  Tout  400\r\n
+                        #  Err   023E\r\n
+                    */
 
-        Ok(())
+                    // sample output no active connection
+                    /*
+                        R000031\r\n
+                        !  Param Value\r\n
+                        #  Err   0208\r\n
+                    */
+                    if ans.contains("Addr") {
+                        self.write_line(Command::Disconnect, None)?;
+                        self.read_answer(Some(Command::TIMEOUT_DISCONNECT))?;
+
+                        return Ok(());
+                    }
+
+                    debug!("BGX not connected, not disconnect necessary");
+                    Ok(())
+                }
+                _ => Err(anyhow!(
+                    "Got error with header {:?} and content {:?}",
+                    h,
+                    ans
+                )),
+            },
+            ModuleResponse::DataWithoutHeader(e) => {
+                Err(anyhow!("Got data without header: {:?}", e))
+            }
+        }
     }
 }
 
@@ -425,9 +463,11 @@ fn parse_fw_ver(s: &str) -> Result<&str> {
 fn parse_firmware_version_1() {
     let input1 = "XXXXXXBGX13P.1.2.2738.2-1524-2738\r\n";
     let input2 = "BGX13P.1.2.2738.2-1524-2738\r\n";
+    let input3 = "XXXXXXBGX13P.1.2.2738.2-1524-2738\r\nXXXX";
 
     assert_eq!(parse_fw_ver(input1).unwrap(), "BGX13P.1.2.2738.2-1524-2738");
     assert_eq!(parse_fw_ver(input2).unwrap(), "BGX13P.1.2.2738.2-1524-2738");
+    assert_eq!(parse_fw_ver(input3).unwrap(), "BGX13P.1.2.2738.2-1524-2738");
 }
 
 /// searches and returns serial port devices connected via USB
