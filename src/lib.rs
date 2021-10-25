@@ -435,28 +435,25 @@ fn find_module() -> Result<Vec<SerialPortInfo>> {
     let ports = serialport::available_ports()?;
     trace!("Detected the following ports: {:?}", &ports);
 
-    #[allow(clippy::unnecessary_filter_map)]
     let ports = ports
         .into_iter()
-        .filter_map(|p| match &p.port_type {
-            SerialPortType::UsbPort(n) => {
+        .filter(|p| {
+            if let SerialPortType::UsbPort(n) = &p.port_type {
                 debug!("Found USB port: {:?}", &n);
 
                 if let Some(m) = &n.manufacturer {
                     if m.contains("Silicon Labs") || m.contains("Cygnal") || m.contains("CP21") {
-                        Some(p)
+                        return true;
                     } else {
                         warn!(
                             "Found UsbPort but manufacturer string {} didn't match for BGX",
                             m
                         );
-                        None
                     }
-                } else {
-                    None
                 }
             }
-            _ => None,
+
+            false
         })
         .collect::<Vec<_>>();
 
