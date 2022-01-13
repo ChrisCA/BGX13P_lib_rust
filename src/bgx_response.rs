@@ -1,9 +1,9 @@
-use std::fmt::Display;
+use strum::Display;
 use thiserror::Error;
 
 use crate::response_header::ResponseHeader;
 
-#[derive(Debug, PartialEq, Error)]
+#[derive(Debug, PartialEq, Error, Display)]
 pub(crate) enum ResponseCodes {
     Success,
     CommandFailed,
@@ -15,12 +15,6 @@ pub(crate) enum ResponseCodes {
     InvalidArgument,
     Timeout,
     SecurityMismatch,
-}
-
-impl Display for ResponseCodes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!("{:?}", &self))
-    }
 }
 
 impl From<u8> for ResponseCodes {
