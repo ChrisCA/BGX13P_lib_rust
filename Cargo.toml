@@ -11,7 +11,7 @@ serialport = "4.0.1"
 log = "0.4.14"
 anyhow = "1.0.52"
 thiserror = "1.0.30"
-combine = "4.6.3"
+nom = "7.1.0"
 strum = { version = "0.23.0", features = ["derive"] }
 
 [dev-dependencies]
