@@ -3,18 +3,12 @@
 #![forbid(clippy::indexing_slicing)]
 
 use anyhow::{anyhow, Context, Result};
-use combine::{
-    any, between,
-    parser::{
-        char::string,
-        range::{take, take_until_range},
-        repeat::repeat_skip_until,
-        Parser,
-    },
-    token,
-};
 use command::Command;
 use log::{debug, info, trace, warn};
+use nom::{
+    bytes::complete::{take_until, take_until1},
+    error::VerboseError,
+};
 use scan_result::ScanResult;
 use serialport::{
     DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortType, StopBits,
@@ -26,10 +20,7 @@ use std::{
     time::Duration,
 };
 
-use crate::{
-    bgx_response::{ModuleResponse, ResponseCodes},
-    response_header::ResponseHeader,
-};
+use crate::bgx_response::{ModuleResponse, ResponseCodes};
 
 mod bgx_response;
 mod command;
@@ -104,8 +95,8 @@ impl Bgx13p {
         // parse FW version and check if compatible
         // atm only BGX13P.1.2.2738.2-1524-2738 is considered
         let _until_bgx = parse_fw_ver(answer).context("FW version couldn't be parsed")?;
-        info!("Found FW: {}", _until_bgx);
-        let other_fw = _until_bgx != "BGX13P.1.2.2738.2-1524-2738";
+        info!("Found FW string: {:?}", _until_bgx);
+        let other_fw = _until_bgx.1 != "BGX13P.1.2.2738.2-1524-2738";
 
         self.apply_default_settings(other_fw)?;
 
@@ -143,6 +134,7 @@ impl Bgx13p {
         match ans {
             ModuleResponse::DataWithHeader(_, ans) => {
                 return Ok(ans
+                    .1
                     .lines()
                     .filter_map(|f| ScanResult::from_str(f).ok())
                     .collect::<Vec<_>>());
@@ -201,36 +193,9 @@ impl Bgx13p {
             .map(|f| f.expect("Couldn't get byte"))
             .collect();
 
-        if !bytes.is_empty() {
-            if let Ok(bs) = std::str::from_utf8(&bytes) {
-                debug!("BGX answered: {:?}", &bs);
+        let header = ModuleResponse::try_from(bytes.as_slice())?;
 
-                let header_str = between(token('R'), string("\r\n"), take::<&str>(6)).parse(bs)?;
-
-                // let header_str = header_str?;
-                trace!("Should be string for header: {:?}", header_str.0);
-                let h = ResponseHeader::from_str(header_str.0)?;
-                trace!("Parsed header: {:?}", h);
-
-                /*
-                SAMPLE:
-                R000029\r\n
-                BGX13P.1.2.2738.2-1524-2738\r\n
-                */
-                let answer = bytes.get(9..h.length as usize + 9).context(format!(
-                    "Couldn't get {} bytes as it should be possible declared in header",
-                    h.length
-                ))?;
-                let answer = std::str::from_utf8(answer)?.to_string();
-
-                Ok(ModuleResponse::DataWithHeader(h, answer))
-            } else {
-                Ok(ModuleResponse::DataWithoutHeader(bytes))
-            }
-        } else {
-            Err(anyhow!("Didn't get any data when reading from BGX"))
-        }
-
+        Ok(header)
         // do not return an error because of response code here as this is a module error but not an error in the read-answer-process
         // match h.response_code {
         //     ResponseCodes::Success => (),
@@ -428,7 +393,7 @@ impl Bgx13p {
                         !  Param Value\r\n
                         #  Err   0208\r\n
                     */
-                    if ans.contains("Addr") {
+                    if ans.1.contains("Addr") {
                         self.write_line(Command::Disconnect, None)?;
                         self.read_answer(Some(Command::TIMEOUT_DISCONNECT))?;
 
@@ -451,12 +416,14 @@ impl Bgx13p {
     }
 }
 
-fn parse_fw_ver(s: &str) -> Result<&str> {
-    // do not match on BGX13P. instead of BGX13 here as this reported name is not consistent over older versions
-    let first = repeat_skip_until(any(), string("BGX13")).parse(s)?.1;
-    let mid = take_until_range("\r\n").parse(first)?.0;
+fn parse_fw_ver(s: &str) -> Result<(&str, &str, &str)> {
+    // WARN: Do not match on BGX13P. instead of BGX13 here as this reported name is not consistent over older versions
 
-    Ok(mid)
+    let first = take_until("BGX13")(s).map_err(|e: nom::Err<VerboseError<_>>| anyhow!("{}", e))?;
+    let second =
+        take_until1("\r\n")(first.0).map_err(|e: nom::Err<VerboseError<_>>| anyhow!("{}", e))?;
+
+    Ok((first.1, second.1, second.0))
 }
 
 #[test]
@@ -465,9 +432,39 @@ fn parse_firmware_version_1() {
     let input2 = "BGX13P.1.2.2738.2-1524-2738\r\n";
     let input3 = "XXXXXXBGX13P.1.2.2738.2-1524-2738\r\nXXXX";
 
-    assert_eq!(parse_fw_ver(input1).unwrap(), "BGX13P.1.2.2738.2-1524-2738");
-    assert_eq!(parse_fw_ver(input2).unwrap(), "BGX13P.1.2.2738.2-1524-2738");
-    assert_eq!(parse_fw_ver(input3).unwrap(), "BGX13P.1.2.2738.2-1524-2738");
+    assert_eq!(
+        parse_fw_ver(input1).unwrap(),
+        ("XXXXXX", "BGX13P.1.2.2738.2-1524-2738", "\r\n")
+    );
+    assert_eq!(
+        parse_fw_ver(input2).unwrap(),
+        ("", "BGX13P.1.2.2738.2-1524-2738", "\r\n")
+    );
+    assert_eq!(
+        parse_fw_ver(input3).unwrap(),
+        ("XXXXXX", "BGX13P.1.2.2738.2-1524-2738", "\r\nXXXX")
+    );
+}
+
+#[test]
+#[should_panic]
+fn parse_firmware_version_2() {
+    let input1 = "XXXXXXBGX13P.1.2.2738.2-1524-2738";
+    let input2 = "BX13P.1.2.2738.2-1524-2738\r\n";
+    let input3 = "XXXXXXBGX13P.1.2.2738.2-1524-2738\rX\nXXXX";
+
+    assert_eq!(
+        parse_fw_ver(input1).unwrap(),
+        ("XXXXXX", "BGX13P.1.2.2738.2-1524-2738", "\r\n")
+    );
+    assert_eq!(
+        parse_fw_ver(input2).unwrap(),
+        ("", "BGX13P.1.2.2738.2-1524-2738", "\r\n")
+    );
+    assert_eq!(
+        parse_fw_ver(input3).unwrap(),
+        ("XXXXXX", "BGX13P.1.2.2738.2-1524-2738", "\r\nXXXX")
+    );
 }
 
 /// searches and returns serial port devices connected via USB
