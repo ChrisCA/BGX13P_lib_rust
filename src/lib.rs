@@ -86,8 +86,7 @@ impl Bgx13p {
             .as_mut()
             .bytes()
             .take_while(|f| f.is_ok())
-            .map(|f| f.expect("Couldn't get byte"))
-            .collect();
+            .collect::<Result<Vec<_>, std::io::Error>>()?;
 
         let answer = std::str::from_utf8(&answer)?;
         trace!("FW version feedback: {}", answer);
@@ -190,8 +189,7 @@ impl Bgx13p {
             .as_mut()
             .bytes()
             .take_while(|f| f.is_ok())
-            .map(|f| f.expect("Couldn't get byte"))
-            .collect();
+            .collect::<Result<Vec<_>, std::io::Error>>()?;
 
         let header = ModuleResponse::try_from(bytes.as_slice())?;
 
@@ -244,8 +242,7 @@ impl Bgx13p {
             .as_mut()
             .bytes()
             .take_while(|f| f.is_ok())
-            .map(|f| f.expect("Couldn't get byte"))
-            .collect();
+            .collect::<Result<Vec<_>, std::io::Error>>()?;
 
         let answer = std::str::from_utf8(&bytes)?;
         trace!("Applied settings read: {}", answer);
@@ -275,8 +272,7 @@ impl Bgx13p {
             .as_mut()
             .bytes()
             .take_while(|f| f.is_ok())
-            .map(|f| f.expect("Couldn't get byte"))
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, std::io::Error>>()?;
 
         // here we write two times and then read
         // because we might have left over $$$ from an earlier command which hasn't been used as the device has not been in stream mode
@@ -288,8 +284,7 @@ impl Bgx13p {
             .as_mut()
             .bytes()
             .take_while(|f| f.is_ok())
-            .map(|f| f.expect("Couldn't get byte"))
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, std::io::Error>>()?;
 
         if !read_from_port.is_empty() {
             trace!("Got one or more Ready --> not in stream mode");
@@ -310,8 +305,7 @@ impl Bgx13p {
                 .as_mut()
                 .bytes()
                 .take_while(|f| f.is_ok())
-                .map(|f| f.expect("Couldn't get byte"))
-                .collect::<Vec<_>>();
+                .collect::<Result<Vec<_>, std::io::Error>>()?;
 
             debug!("Recheck if in stream mode...");
             self.switch_to_command_mode()?;
