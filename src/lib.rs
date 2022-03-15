@@ -132,11 +132,7 @@ impl Bgx13p {
 
         match ans {
             ModuleResponse::DataWithHeader(_, ans) => {
-                return Ok(ans
-                    .1
-                    .lines()
-                    .filter_map(|f| ScanResult::from_str(f).ok())
-                    .collect::<Vec<_>>());
+                return ans.1.lines().map(ScanResult::from_str).collect();
             }
             ModuleResponse::DataWithoutHeader(_) => Err(anyhow!(
                 "Got data without header when expecting scan answer"
