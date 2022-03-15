@@ -9,10 +9,10 @@ edition = "2021"
 [dependencies]
 serialport = "4.0.1"
 log = "0.4.14"
-anyhow = "1.0.52"
+anyhow = "1.0.56"
 thiserror = "1.0.30"
-nom = "7.1.0"
-strum = { version = "0.23.0", features = ["derive"] }
+nom = "7.1.1"
+strum = { version = "0.24.0", features = ["derive"] }
 
 [dev-dependencies]
-simple_logger = "1.16.0"
+simple_logger = "2.1.0"
