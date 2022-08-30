@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::response_header::ResponseHeader;
 
-#[derive(Debug, PartialEq, Error)]
+#[derive(Debug, PartialEq, Eq, Error)]
 pub(crate) enum ResponseCodes {
     #[error("Success")]
     Success,
@@ -33,9 +33,17 @@ pub(crate) enum ResponseCodes {
     SecurityMismatch,
 }
 
-impl From<u8> for ResponseCodes {
-    fn from(value: u8) -> Self {
-        match value {
+#[derive(Debug, PartialEq, Eq, Error)]
+pub enum Errors {
+    #[error("Only response code from 0 to 9 are expected, got: {0}")]
+    InvalidResponseCode(u8),
+}
+
+impl TryFrom<u8> for ResponseCodes {
+    type Error = Errors;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        Ok(match value {
             0 => ResponseCodes::Success,
             1 => ResponseCodes::CommandFailed,
             2 => ResponseCodes::ParseError,
@@ -46,8 +54,8 @@ impl From<u8> for ResponseCodes {
             7 => ResponseCodes::InvalidArgument,
             8 => ResponseCodes::Timeout,
             9 => ResponseCodes::SecurityMismatch,
-            _ => unreachable!(),
-        }
+            _ => return Err(Errors::InvalidResponseCode(value)),
+        })
     }
 }
 

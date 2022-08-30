@@ -25,7 +25,7 @@ impl TryFrom<&[u8]> for ResponseHeader {
                 .get(..1)
                 .ok_or("Couldn't get code number in header")?
                 .parse::<u8>()?
-                .into(),
+                .try_into()?,
             length: value
                 .get(1..6)
                 .ok_or("Couldn't get length numbers in header")?
