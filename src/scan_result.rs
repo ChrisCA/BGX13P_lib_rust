@@ -1,8 +1,6 @@
-use std::str::FromStr;
+use std::{error::Error, str::FromStr};
 
-use anyhow::{Context, Error};
-
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ScanResult {
     pub mac: String,
     pub friendly_name: String,
@@ -10,19 +8,16 @@ pub struct ScanResult {
 }
 
 impl FromStr for ScanResult {
-    type Err = Error;
+    type Err = Box<dyn Error>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut spl = s.split_whitespace();
 
-        let rssi: i8 = spl.nth(2).context("Couldn't get rssi on 2")?.parse()?;
-        let mac = spl
-            .next()
-            .context("Couldn't get mac on 3")?
-            .replace(':', "");
+        let rssi: i8 = spl.nth(2).ok_or("Couldn't get rssi on 2")?.parse()?;
+        let mac = spl.next().ok_or("Couldn't get mac on 3")?.replace(':', "");
         let friendly_name = spl
             .next()
-            .context("Couldn't get friendly_name on 4")?
+            .ok_or("Couldn't get friendly_name on 4")?
             .to_string();
 
         Ok(Self {

@@ -1,11 +1,10 @@
-use anyhow::{anyhow, Result};
-use std::{thread::sleep, time::Duration};
+use std::{error::Error, thread::sleep, time::Duration};
 
 use log::debug;
 use simple_logger::SimpleLogger;
 use BGX13P_lib_rust::*;
 
-fn main() -> Result<()> {
+fn main() -> Result<(), Box<dyn Error>> {
     SimpleLogger::new().init().unwrap();
     // let macs = vec!["d0cf5e828506", /* "000d6fa7a5e8",*/ "000d6fa7a154"];
 
@@ -39,6 +38,6 @@ fn main() -> Result<()> {
             }
         }
     } else {
-        Err(anyhow!("Couldn't apply settings"))
+        Err("Couldn't apply settings".into())
     }
 }

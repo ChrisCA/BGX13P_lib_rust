@@ -1,4 +1,3 @@
-use anyhow::{anyhow, Context, Error};
 use log::{debug, trace};
 use nom::{
     bytes::complete::{take, take_till},
@@ -50,7 +49,7 @@ pub(crate) enum ModuleResponse {
 }
 
 impl TryFrom<&[u8]> for ModuleResponse {
-    type Error = Error;
+    type Error = Box<dyn std::error::Error>;
 
     /// takes input, returns optional content before, the actual content and the optional content after
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
@@ -62,9 +61,10 @@ impl TryFrom<&[u8]> for ModuleResponse {
         debug!("BGX answered: {:?}", value);
 
         // split everything off before the 'R'
-        let (after, before_header) = take_till(|c| c == b'R')(value)
-            .map_err(|e: nom::Err<VerboseError<_>>| anyhow!("{}", e))
-            .context("Didn't get any data when reading from BGX")?;
+        let (after, before_header) =
+            take_till(|c| c == b'R')(value).map_err(|e: nom::Err<VerboseError<_>>| {
+                format!("Didn't get any data when reading from BGX due to: {}", e)
+            })?;
 
         // early return if no 'R' is found
         if after.is_empty() {
@@ -73,7 +73,7 @@ impl TryFrom<&[u8]> for ModuleResponse {
 
         // get out the relevant numbers from the header
         let (module_message, header) = delimited(char('R'), digit1, crlf)(after)
-            .map_err(|e: nom::Err<VerboseError<_>>| anyhow!("{}", e))?;
+            .map_err(|e: nom::Err<VerboseError<_>>| format!("{}", e))?;
 
         // parse header
         let header = ResponseHeader::try_from(header)?;
@@ -81,7 +81,7 @@ impl TryFrom<&[u8]> for ModuleResponse {
 
         // split of the part of the module answer which has been communicated via the header
         let (after_message, module_message) = take(header.length)(module_message)
-            .map_err(|e: nom::Err<VerboseError<_>>| anyhow!("{}", e))?;
+            .map_err(|e: nom::Err<VerboseError<_>>| format!("{}", e))?;
 
         let module_message = std::str::from_utf8(module_message)?;
 

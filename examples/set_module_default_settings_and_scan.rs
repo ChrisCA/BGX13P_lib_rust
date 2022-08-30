@@ -1,10 +1,10 @@
-use anyhow::{anyhow, Result};
+use std::error::Error;
 
 use log::debug;
 use simple_logger::SimpleLogger;
 use BGX13P_lib_rust::*;
 
-fn main() -> Result<()> {
+fn main() -> Result<(), Box<dyn Error>> {
     SimpleLogger::new().init().unwrap();
 
     if let Ok(mut bgx) = Bgx13p::new() {
@@ -14,6 +14,6 @@ fn main() -> Result<()> {
         debug!("{:?}", res);
         Ok(())
     } else {
-        Err(anyhow!("Couldn't apply settings"))
+        Err("Couldn't apply settings".into())
     }
 }

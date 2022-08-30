@@ -2,7 +2,6 @@
 #![allow(non_upper_case_globals)]
 #![forbid(clippy::indexing_slicing)]
 
-use anyhow::{anyhow, Context, Result};
 use command::Command;
 use log::{debug, info, trace, warn};
 use nom::{
@@ -14,6 +13,7 @@ use serialport::{
     DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortType, StopBits,
 };
 use std::{
+    error::Error,
     io::{Read, Write},
     str::FromStr,
     thread::sleep,
@@ -33,22 +33,19 @@ pub struct Bgx13p {
 }
 
 impl Bgx13p {
-    pub fn new() -> Result<Self> {
+    pub fn new() -> Result<Self, Box<dyn Error>> {
         let p = find_module()?;
 
         for e in &p {
             info!("Found port: {}", e.port_name);
         }
 
-        let chosen_port = p.first().context("Couldn't get any first port");
-        let port_name = match chosen_port {
-            Ok(p) => &p.port_name,
-            Err(e) => {
-                warn!(
-                    "Couldn't determine USB port due to: {} => try using default /dev/ttyUSB0",
-                    e
-                );
-                "/dev/ttyUSB0"
+        let port_name = match p.first() {
+            Some(p) => &p.port_name,
+            None => {
+                warn!("Couldn't determine USB port");
+
+                return Err("Couldn't determine USB port".into());
             }
         };
 
@@ -70,7 +67,7 @@ impl Bgx13p {
         Try to reach a well known state in which settings for further usage are set.
         This will also bring the module into the Command Mode and check for a compatible FW version.
     */
-    pub fn reach_well_known_state(&mut self) -> Result<()> {
+    pub fn reach_well_known_state(&mut self) -> Result<(), Box<dyn Error>> {
         // early return if we are already in a well known state
         if self.default_settings_applied {
             return Ok(());
@@ -93,7 +90,7 @@ impl Bgx13p {
 
         // parse FW version and check if compatible
         // atm only BGX13P.1.2.2738.2-1524-2738 is considered
-        let _until_bgx = parse_fw_ver(answer).context("FW version couldn't be parsed")?;
+        let _until_bgx = parse_fw_ver(answer)?;
         info!("Found FW string: {:?}", _until_bgx);
         let other_fw = _until_bgx.1 != "BGX13P.1.2.2738.2-1524-2738";
 
@@ -112,12 +109,12 @@ impl Bgx13p {
             }
         }
 
-        Err(anyhow!("Couldn't reach a well known state"))
+        Err("Couldn't reach a well known state".into())
     }
 
     /// Scans for nearby BGX modules.
     /// Module must not be connect or scan will fail.
-    pub fn scan(&mut self) -> Result<Vec<ScanResult>> {
+    pub fn scan(&mut self) -> Result<Vec<ScanResult>, Box<dyn Error>> {
         self.switch_to_command_mode()?;
 
         self.disconnect()?;
@@ -134,14 +131,18 @@ impl Bgx13p {
             ModuleResponse::DataWithHeader(_, ans) => {
                 return ans.1.lines().map(ScanResult::from_str).collect();
             }
-            ModuleResponse::DataWithoutHeader(_) => Err(anyhow!(
-                "Got data without header when expecting scan answer"
-            )),
+            ModuleResponse::DataWithoutHeader(_) => {
+                Err("Got data without header when expecting scan answer".into())
+            }
         }
     }
 
     /// writes a command to the module which ends with \r\n and errors on timeout
-    fn write_line(&mut self, cmd: &[u8], custom_timeout: Option<Duration>) -> Result<()> {
+    fn write_line(
+        &mut self,
+        cmd: &[u8],
+        custom_timeout: Option<Duration>,
+    ) -> Result<(), Box<dyn Error>> {
         let command = [cmd, Command::LINEBREAK].concat();
 
         self.write(&command, custom_timeout)?;
@@ -150,18 +151,23 @@ impl Bgx13p {
     }
 
     /// reads all available bytes from the module
-    pub fn read(&mut self, custom_timeout: Option<Duration>) -> Result<Vec<u8>> {
+    pub fn read(&mut self, custom_timeout: Option<Duration>) -> Result<Vec<u8>, Box<dyn Error>> {
         match self.read_answer(custom_timeout)? {
-            ModuleResponse::DataWithHeader(h, _) => Err(anyhow!(
+            ModuleResponse::DataWithHeader(h, _) => Err(format!(
                 "Got data with header {:?} but expected passthrough payload from BGX module.",
                 h
-            )),
+            )
+            .into()),
             ModuleResponse::DataWithoutHeader(r) => Ok(r),
         }
     }
 
     // writes all byte to modules
-    pub fn write(&mut self, payload: &[u8], custom_timeout: Option<Duration>) -> Result<()> {
+    pub fn write(
+        &mut self,
+        payload: &[u8],
+        custom_timeout: Option<Duration>,
+    ) -> Result<(), Box<dyn Error>> {
         if let Some(custom_timeout) = custom_timeout {
             self.port.set_timeout(custom_timeout)?;
         } else {
@@ -173,7 +179,10 @@ impl Bgx13p {
         Ok(())
     }
 
-    fn read_answer(&mut self, custom_timeout: Option<Duration>) -> Result<ModuleResponse> {
+    fn read_answer(
+        &mut self,
+        custom_timeout: Option<Duration>,
+    ) -> Result<ModuleResponse, Box<dyn Error>> {
         if let Some(custom_timeout) = custom_timeout {
             self.port.set_timeout(custom_timeout)?;
         } else {
@@ -187,18 +196,18 @@ impl Bgx13p {
             .take_while(|f| f.is_ok())
             .collect::<Result<Vec<_>, std::io::Error>>()?;
 
-        let header = ModuleResponse::try_from(bytes.as_slice())?;
+        let header: ModuleResponse = ModuleResponse::try_from(bytes.as_slice())?;
 
         Ok(header)
         // do not return an error because of response code here as this is a module error but not an error in the read-answer-process
         // match h.response_code {
         //     ResponseCodes::Success => (),
-        //     _ => return Err(anyhow!(h.response_code)),
+        //     _ => return Err(format!(h.response_code)),
         // }
     }
 
     /// resets the module to factory default and applies default settings
-    fn apply_default_settings(&mut self, expect_old_fw: bool) -> Result<()> {
+    fn apply_default_settings(&mut self, expect_old_fw: bool) -> Result<(), Box<dyn Error>> {
         self.switch_to_command_mode()?;
 
         let cmds: Vec<&[u8]> = if expect_old_fw {
@@ -247,18 +256,18 @@ impl Bgx13p {
         let expected_success = if expect_old_fw { 8 } else { 9 };
 
         if count_success != expected_success {
-            return Err(anyhow!(
+            return Err(format!(
                 "Only got {} times success instead of expected {} times",
-                count_success,
-                expected_success
-            ));
+                count_success, expected_success
+            )
+            .into());
         }
 
         Ok(())
     }
 
     /// makes sure the module is not in stream mode anymore, should be ran before any other control commands should be send to the module
-    fn switch_to_command_mode(&mut self) -> Result<()> {
+    fn switch_to_command_mode(&mut self) -> Result<(), Box<dyn Error>> {
         debug!("Check if in stream mode...");
         self.port.set_timeout(Command::TIMEOUT_COMMON)?;
 
@@ -314,7 +323,7 @@ impl Bgx13p {
 
     /// connects to a device with a given mac,
     /// skips if already connected to the device and disconnects before connecting to a new device
-    pub fn connect(&mut self, mac: &str) -> Result<()> {
+    pub fn connect(&mut self, mac: &str) -> Result<(), Box<dyn Error>> {
         self.switch_to_command_mode()?;
 
         self.disconnect()?;
@@ -326,38 +335,37 @@ impl Bgx13p {
             ModuleResponse::DataWithHeader(h, _) => match h.response_code {
                 ResponseCodes::CommandFailed => {
                     self.disconnect()?;
-                    Err(anyhow!("Command failed as devices where still connected but now has been disconnected"))
+                    Err("Command failed as devices where still connected but now has been disconnected".into())
                 }
                 ResponseCodes::SecurityMismatch => {
                     self.write_line(Command::ClearAllBondings, None)?;
                     if let Ok(ModuleResponse::DataWithHeader(h, _)) = self.read_answer(None) {
                         if h.response_code == ResponseCodes::Success {
-                            return Err(anyhow!(
-                                "Security mismatch but performed clear bonding on device"
-                            ));
+                            return Err(
+                                "Security mismatch but performed clear bonding on device".into()
+                            );
                         }
                     }
 
-                    Err(anyhow!(
-                        "Security mismatch and performing clear bonding didn't worked out"
-                    ))
+                    Err("Security mismatch and performing clear bonding didn't worked out".into())
                 }
                 ResponseCodes::Success => Ok(()),
                 ResponseCodes::Timeout => {
-                    Err(anyhow!("Couldn't connect to device within given time."))
+                    Err("Couldn't connect to device within given time.".into())
                 }
-                _ => Err(anyhow!(
+                _ => Err(format!(
                     "Error when handling connection but no plan how to handle it: {:?}",
                     h
-                )),
+                )
+                .into()),
             },
-            ModuleResponse::DataWithoutHeader(_) => Err(anyhow!(
-                "Got data without header when being in connection process"
-            )),
+            ModuleResponse::DataWithoutHeader(_) => {
+                Err("Got data without header when being in connection process".into())
+            }
         }
     }
 
-    pub fn disconnect(&mut self) -> Result<()> {
+    pub fn disconnect(&mut self) -> Result<(), Box<dyn Error>> {
         self.switch_to_command_mode()?;
 
         // TODO: ConParams command is only available starting from BGX FW 1.2045
@@ -394,25 +402,21 @@ impl Bgx13p {
                     debug!("BGX not connected, not disconnect necessary");
                     Ok(())
                 }
-                _ => Err(anyhow!(
-                    "Got error with header {:?} and content {:?}",
-                    h,
-                    ans
-                )),
+                _ => Err(format!("Got error with header {:?} and content {:?}", h, ans).into()),
             },
             ModuleResponse::DataWithoutHeader(e) => {
-                Err(anyhow!("Got data without header: {:?}", e))
+                Err(format!("Got data without header: {:?}", e).into())
             }
         }
     }
 }
 
-fn parse_fw_ver(s: &str) -> Result<(&str, &str, &str)> {
+fn parse_fw_ver(s: &str) -> Result<(&str, &str, &str), Box<dyn Error>> {
     // WARN: Do not match on BGX13P. instead of BGX13 here as this reported name is not consistent over older versions
 
-    let first = take_until("BGX13")(s).map_err(|e: nom::Err<VerboseError<_>>| anyhow!("{}", e))?;
+    let first = take_until("BGX13")(s).map_err(|e: nom::Err<VerboseError<_>>| format!("{}", e))?;
     let second =
-        take_until1("\r\n")(first.0).map_err(|e: nom::Err<VerboseError<_>>| anyhow!("{}", e))?;
+        take_until1("\r\n")(first.0).map_err(|e: nom::Err<VerboseError<_>>| format!("{}", e))?;
 
     Ok((first.1, second.1, second.0))
 }
@@ -459,7 +463,7 @@ fn parse_firmware_version_2() {
 }
 
 /// searches and returns serial port devices connected via USB
-fn find_module() -> Result<Vec<SerialPortInfo>> {
+fn find_module() -> Result<Vec<SerialPortInfo>, Box<dyn Error>> {
     let ports = serialport::available_ports()?;
     trace!("Detected the following ports: {:?}", &ports);
 

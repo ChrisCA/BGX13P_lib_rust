@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Error};
+use std::error::Error;
 
 use crate::bgx_response::ResponseCodes;
 
@@ -9,13 +9,13 @@ pub(crate) struct ResponseHeader {
 }
 
 impl TryFrom<&[u8]> for ResponseHeader {
-    type Error = Error;
+    type Error = Box<dyn Error>;
 
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         // typical header -> R000117\r\n but R and newline should already been removed by the parser
 
         if value.len() != 6 {
-            return Err(anyhow!("Header code lenght is != 6"));
+            return Err("Header code lenght is != 6".into());
         }
 
         let value = std::str::from_utf8(value)?;
@@ -23,12 +23,12 @@ impl TryFrom<&[u8]> for ResponseHeader {
         Ok(Self {
             response_code: value
                 .get(..1)
-                .context("Couldn't get code number in header")?
+                .ok_or("Couldn't get code number in header")?
                 .parse::<u8>()?
                 .into(),
             length: value
                 .get(1..6)
-                .context("Couldn't get length numbers in header")?
+                .ok_or("Couldn't get length numbers in header")?
                 .parse::<u16>()?,
         })
     }

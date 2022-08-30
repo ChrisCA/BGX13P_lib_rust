@@ -1,9 +1,8 @@
-use anyhow::{anyhow, Result};
-use std::{thread::sleep, time::Duration};
+use std::{error::Error, thread::sleep, time::Duration};
 
 use BGX13P_lib_rust::*;
 
-fn main() -> Result<()> {
+fn main() -> Result<(), Box<dyn Error>> {
     if let Ok(mut bgx) = Bgx13p::new() {
         bgx.reach_well_known_state()?;
 
@@ -15,6 +14,6 @@ fn main() -> Result<()> {
 
         Ok(())
     } else {
-        Err(anyhow!("Couldn't apply settings"))
+        Err("Couldn't apply settings".into())
     }
 }
