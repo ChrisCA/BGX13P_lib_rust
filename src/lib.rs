@@ -196,7 +196,7 @@ impl Bgx13p {
             .take_while(|f| f.is_ok())
             .collect::<Result<Vec<_>, std::io::Error>>()?;
 
-        let header: ModuleResponse = ModuleResponse::try_from(bytes.as_slice())?;
+        let header = ModuleResponse::try_from(bytes.as_slice())?;
 
         Ok(header)
         // do not return an error because of response code here as this is a module error but not an error in the read-answer-process
