@@ -5,22 +5,31 @@ use nom::{
     error::VerboseError,
     sequence::delimited,
 };
-use strum::Display;
 use thiserror::Error;
 
 use crate::response_header::ResponseHeader;
 
-#[derive(Debug, PartialEq, Error, Display)]
+#[derive(Debug, PartialEq, Error)]
 pub(crate) enum ResponseCodes {
+    #[error("Success")]
     Success,
+    #[error("CommandFailed")]
     CommandFailed,
+    #[error("ParseError")]
     ParseError,
+    #[error("UnknownCommand")]
     UnknownCommand,
+    #[error("TooFewArguments")]
     TooFewArguments,
+    #[error("TooManyArguments")]
     TooManyArguments,
+    #[error("UnknownVariableOrOption")]
     UnknownVariableOrOption,
+    #[error("InvalidArgument")]
     InvalidArgument,
+    #[error("Timeout")]
     Timeout,
+    #[error("SecurityMismatch")]
     SecurityMismatch,
 }
 
