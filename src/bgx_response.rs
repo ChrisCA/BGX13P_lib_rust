@@ -60,12 +60,12 @@ impl TryFrom<u8> for ResponseCodes {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) enum ModuleResponse {
+pub(crate) enum BgxResponse {
     DataWithHeader(ResponseHeader, (Vec<u8>, String, Vec<u8>)),
     DataWithoutHeader(Vec<u8>),
 }
 
-impl TryFrom<&[u8]> for ModuleResponse {
+impl TryFrom<&[u8]> for BgxResponse {
     type Error = Box<dyn std::error::Error>;
 
     /// takes input, returns optional content before, the actual content and the optional content after
@@ -78,18 +78,18 @@ impl TryFrom<&[u8]> for ModuleResponse {
         debug!("BGX answered: {:?}", value);
 
         // split everything off before the 'R'
-        let (after, before_header) =
+        let (after_header, before_header) =
             take_till(|c| c == b'R')(value).map_err(|e: nom::Err<VerboseError<_>>| {
                 format!("Didn't get any data when reading from BGX due to: {}", e)
             })?;
 
         // early return if no 'R' is found
-        if after.is_empty() {
-            return Ok(ModuleResponse::DataWithoutHeader(before_header.to_vec()));
+        if after_header.is_empty() {
+            return Ok(BgxResponse::DataWithoutHeader(before_header.to_vec()));
         }
 
         // get out the relevant numbers from the header
-        let (module_message, header) = delimited(char('R'), digit1, crlf)(after)
+        let (module_message, header) = delimited(char('R'), digit1, crlf)(after_header)
             .map_err(|e: nom::Err<VerboseError<_>>| format!("{}", e))?;
 
         // parse header
@@ -102,7 +102,7 @@ impl TryFrom<&[u8]> for ModuleResponse {
 
         let module_message = std::str::from_utf8(module_message)?;
 
-        Ok(ModuleResponse::DataWithHeader(
+        Ok(BgxResponse::DataWithHeader(
             header,
             (
                 before_header.to_vec(),
@@ -118,7 +118,7 @@ fn module_response_test_1() {
     const input1: &[u8] = b"R000029\r\nBGX13P.1.2.2738.2-1524-2738\r\n";
 
     assert_eq!(
-        ModuleResponse::DataWithHeader(
+        BgxResponse::DataWithHeader(
             ResponseHeader {
                 response_code: ResponseCodes::Success,
                 length: 29
@@ -129,6 +129,6 @@ fn module_response_test_1() {
                 Vec::new()
             )
         ),
-        ModuleResponse::try_from(input1).unwrap()
+        BgxResponse::try_from(input1).unwrap()
     )
 }

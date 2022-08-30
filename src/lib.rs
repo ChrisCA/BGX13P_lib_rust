@@ -8,7 +8,7 @@ use nom::{
     bytes::complete::{take_until, take_until1},
     error::VerboseError,
 };
-use scan_result::ScanResult;
+use scanned_device::ScannedDevice;
 use serialport::{
     DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortType, StopBits,
 };
@@ -20,12 +20,13 @@ use std::{
     time::Duration,
 };
 
-use crate::bgx_response::{ModuleResponse, ResponseCodes};
+use crate::bgx_response::{BgxResponse, ResponseCodes};
 
 mod bgx_response;
 mod command;
 mod response_header;
-mod scan_result;
+mod scan;
+mod scanned_device;
 
 pub struct Bgx13p {
     port: Box<dyn SerialPort>,
@@ -100,7 +101,7 @@ impl Bgx13p {
         self.write_line(b"", None)?;
         let answer = self.read_answer(None)?;
 
-        if let ModuleResponse::DataWithHeader(n, _) = answer {
+        if let BgxResponse::DataWithHeader(n, _) = answer {
             if ResponseCodes::Success == n.response_code {
                 self.default_settings_applied = true;
                 info!("Reached well known state");
@@ -114,7 +115,7 @@ impl Bgx13p {
 
     /// Scans for nearby BGX modules.
     /// Module must not be connect or scan will fail.
-    pub fn scan(&mut self) -> Result<Vec<ScanResult>, Box<dyn Error>> {
+    pub fn scan(&mut self) -> Result<Vec<ScannedDevice>, Box<dyn Error>> {
         self.switch_to_command_mode()?;
 
         self.disconnect()?;
@@ -128,10 +129,10 @@ impl Bgx13p {
         debug!("stop scan");
 
         match ans {
-            ModuleResponse::DataWithHeader(_, ans) => {
-                return ans.1.lines().map(ScanResult::from_str).collect();
+            BgxResponse::DataWithHeader(_, ans) => {
+                return ans.1.lines().map(ScannedDevice::from_str).collect();
             }
-            ModuleResponse::DataWithoutHeader(_) => {
+            BgxResponse::DataWithoutHeader(_) => {
                 Err("Got data without header when expecting scan answer".into())
             }
         }
@@ -153,12 +154,12 @@ impl Bgx13p {
     /// reads all available bytes from the module
     pub fn read(&mut self, custom_timeout: Option<Duration>) -> Result<Vec<u8>, Box<dyn Error>> {
         match self.read_answer(custom_timeout)? {
-            ModuleResponse::DataWithHeader(h, _) => Err(format!(
+            BgxResponse::DataWithHeader(h, _) => Err(format!(
                 "Got data with header {:?} but expected passthrough payload from BGX module.",
                 h
             )
             .into()),
-            ModuleResponse::DataWithoutHeader(r) => Ok(r),
+            BgxResponse::DataWithoutHeader(r) => Ok(r),
         }
     }
 
@@ -182,7 +183,7 @@ impl Bgx13p {
     fn read_answer(
         &mut self,
         custom_timeout: Option<Duration>,
-    ) -> Result<ModuleResponse, Box<dyn Error>> {
+    ) -> Result<BgxResponse, Box<dyn Error>> {
         if let Some(custom_timeout) = custom_timeout {
             self.port.set_timeout(custom_timeout)?;
         } else {
@@ -196,7 +197,7 @@ impl Bgx13p {
             .take_while(|f| f.is_ok())
             .collect::<Result<_, _>>()?;
 
-        let header = ModuleResponse::try_from(bytes.as_slice())?;
+        let header = BgxResponse::try_from(bytes.as_slice())?;
 
         Ok(header)
         // do not return an error because of response code here as this is a module error but not an error in the read-answer-process
@@ -332,14 +333,14 @@ impl Bgx13p {
         let ans = self.read_answer(Some(Command::TIMEOUT_CONNECT))?;
 
         match ans {
-            ModuleResponse::DataWithHeader(h, _) => match h.response_code {
+            BgxResponse::DataWithHeader(h, _) => match h.response_code {
                 ResponseCodes::CommandFailed => {
                     self.disconnect()?;
                     Err("Command failed as devices where still connected but now has been disconnected".into())
                 }
                 ResponseCodes::SecurityMismatch => {
                     self.write_line(Command::ClearAllBondings, None)?;
-                    if let Ok(ModuleResponse::DataWithHeader(h, _)) = self.read_answer(None) {
+                    if let Ok(BgxResponse::DataWithHeader(h, _)) = self.read_answer(None) {
                         if h.response_code == ResponseCodes::Success {
                             return Err(
                                 "Security mismatch but performed clear bonding on device".into()
@@ -359,7 +360,7 @@ impl Bgx13p {
                 )
                 .into()),
             },
-            ModuleResponse::DataWithoutHeader(_) => {
+            BgxResponse::DataWithoutHeader(_) => {
                 Err("Got data without header when being in connection process".into())
             }
         }
@@ -372,7 +373,7 @@ impl Bgx13p {
         self.write_line(Command::ConParams, None)?;
         let r = self.read_answer(None)?;
         match r {
-            ModuleResponse::DataWithHeader(h, ans) => match h.response_code {
+            BgxResponse::DataWithHeader(h, ans) => match h.response_code {
                 ResponseCodes::Success => {
                     // sample output active connection
                     /*
@@ -404,7 +405,7 @@ impl Bgx13p {
                 }
                 _ => Err(format!("Got error with header {:?} and content {:?}", h, ans).into()),
             },
-            ModuleResponse::DataWithoutHeader(e) => {
+            BgxResponse::DataWithoutHeader(e) => {
                 Err(format!("Got data without header: {:?}", e).into())
             }
         }
