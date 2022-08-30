@@ -194,7 +194,7 @@ impl Bgx13p {
             .as_mut()
             .bytes()
             .take_while(|f| f.is_ok())
-            .collect::<Result<Vec<_>, std::io::Error>>()?;
+            .collect::<Result<_, _>>()?;
 
         let header = ModuleResponse::try_from(bytes.as_slice())?;
 
