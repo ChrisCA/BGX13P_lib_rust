@@ -232,6 +232,7 @@ impl Bgx13p {
             sleep(Duration::from_millis(200)); // here we do not use a read answer as it use rad until timeout and we do not know whether the header is already activated
             info!("Successfully applied setting");
         }
+        
 
         let bytes: Vec<u8> = self
             .port
