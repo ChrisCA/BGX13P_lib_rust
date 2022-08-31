@@ -1,7 +1,7 @@
 use std::error::Error;
 
 use simple_logger::SimpleLogger;
-use BGX13P_lib_rust::detect_modules;
+use BGX13P_lib_rust::bgx::detect_modules;
 
 fn main() -> Result<(), Box<dyn Error>> {
     SimpleLogger::new().init().unwrap();
