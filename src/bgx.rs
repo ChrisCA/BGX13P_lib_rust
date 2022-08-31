@@ -10,7 +10,8 @@ use std::{
 
 use crate::{
     command::Command,
-    find_module, parse_fw_ver,
+    find_module,
+    fw::parse_fw_ver,
     response::{BgxResponse, ResponseCodes},
     scan::ScanResult,
 };
