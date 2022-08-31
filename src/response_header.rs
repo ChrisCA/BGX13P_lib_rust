@@ -24,7 +24,8 @@ impl TryFrom<&[u8]> for ResponseHeader {
             response_code: value
                 .get(..1)
                 .ok_or("Couldn't get code number in header")?
-                .parse::<u8>()?
+                .parse::<u8>()
+                .map_err(|e| format!("{e}\tCouldn't parse {:?} to response code", value.get(..1)))?
                 .try_into()?,
             length: value
                 .get(1..6)

@@ -36,3 +36,35 @@ fn scan_result_1() {
 
     assert_eq!(res1, res2);
 }
+
+// #[test]
+// fn scan_result_2() {
+//     const input: &[u8] = b"R000269
+//     !  # RSSI BD_ADDR           Device Name
+//     #  1  -72 ec:1b:bd:1b:12:a1 LOR-1490
+//     #  2  -84 60:a4:23:c5:91:b7 LOR-8090
+//     #  3  -81 60:a4:23:c4:37:eb LOR-8090
+//     #  4  -81 ec:1b:bd:1b:12:e0 LOR-1490
+//     #  5  -84 84:71:27:9d:f8:f2 LOR-1490
+//     #  6  -79 60:a4:23:c5:90:ab LOR-1450";
+
+//     let lines = std::str::from_utf8(input).unwrap().lines().skip(2);
+
+//     let res1 = lines
+//         .map(|f| ScannedDevice::from_str(f).unwrap())
+//         .collect::<Vec<_>>();
+//     let res2 = vec![
+//         ScannedDevice {
+//             mac: "d0cf5e828506".to_string(),
+//             friendly_name: "LOR-8090".to_string(),
+//             rssi: -47,
+//         },
+//         ScannedDevice {
+//             mac: "000d6fa7a154".to_string(),
+//             friendly_name: "LOR-8090".to_string(),
+//             rssi: -52,
+//         },
+//     ];
+
+//     assert_eq!(res1, res2);
+// }
