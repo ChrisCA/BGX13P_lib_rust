@@ -13,6 +13,7 @@ use std::{
 use crate::{
     command::Command,
     fw::parse_fw_ver,
+    mac::Mac,
     response::{BgxResponse, ResponseCodes},
     scan::ScanResult,
 };
@@ -328,7 +329,7 @@ impl Bgx13p {
 
     /// connects to a device with a given mac,
     /// skips if already connected to the device and disconnects before connecting to a new device
-    pub fn connect(&mut self, mac: &str) -> Result<(), Box<dyn Error>> {
+    pub fn connect(&mut self, mac: &Mac) -> Result<(), Box<dyn Error>> {
         self.switch_to_command_mode()?;
 
         self.disconnect()?;

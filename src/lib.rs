@@ -5,6 +5,7 @@
 pub mod bgx;
 mod command;
 mod fw;
+pub mod mac;
 mod response;
 mod response_header;
 mod scan;

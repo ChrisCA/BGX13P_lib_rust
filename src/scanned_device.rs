@@ -3,9 +3,11 @@ use std::{error::Error, str::FromStr};
 use log::trace;
 use tap::Tap;
 
+use crate::mac::Mac;
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ScannedDevice {
-    pub mac: String,
+    pub mac: Mac,
     pub friendly_name: String,
     pub rssi: i8,
 }
@@ -29,7 +31,7 @@ impl FromStr for ScannedDevice {
             .next()
             .ok_or("Couldn't get mac on 3")?
             .tap(|r| trace!("Mac to parse: {}", r))
-            .replace(':', "");
+            .parse()?;
         let friendly_name = spl
             .next()
             .ok_or("Couldn't get friendly_name on 4")?
@@ -49,7 +51,7 @@ fn scanned_device_1() {
 
     let res1 = ScannedDevice::from_str(SCAN_RESULT).unwrap();
     let res2 = ScannedDevice {
-        mac: "d0cf5e828506".to_string(),
+        mac: "d0cf5e828506".parse().unwrap(),
         friendly_name: "LOR-8090".to_string(),
         rssi: -47,
     };

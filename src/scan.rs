@@ -38,12 +38,12 @@ fn scan_result_1() {
 
     let res_made = ScanResult(vec![
         ScannedDevice {
-            mac: "d0cf5e828506".to_string(),
+            mac: "d0cf5e828506".parse().unwrap(),
             friendly_name: "LOR-8090".to_string(),
             rssi: -47,
         },
         ScannedDevice {
-            mac: "000d6fa7a154".to_string(),
+            mac: "000d6fa7a154".parse().unwrap(),
             friendly_name: "LOR-8090".to_string(),
             rssi: -52,
         },

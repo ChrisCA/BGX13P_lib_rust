@@ -1,10 +1,12 @@
 use std::time::Duration;
 
+use crate::mac::Mac;
+
 pub(crate) struct Command;
 
 impl Command {
     pub const GetVersion: &'static [u8; 3] = b"ver";
-    pub fn Connect(mac: &str) -> Vec<u8> {
+    pub fn Connect(mac: &Mac) -> Vec<u8> {
         format!("con {} {}", mac, Command::TIMEOUT_CONNECT_BGX_INTERN)
             .as_bytes()
             .to_vec()
