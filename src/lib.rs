@@ -20,10 +20,10 @@ use std::{
     time::Duration,
 };
 
-use crate::bgx_response::{BgxResponse, ResponseCodes};
+use crate::response::{BgxResponse, ResponseCodes};
 
-mod bgx_response;
 mod command;
+mod response;
 mod response_header;
 mod scan;
 mod scanned_device;

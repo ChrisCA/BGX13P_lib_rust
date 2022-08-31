@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use crate::bgx_response::ResponseCodes;
+use crate::response::ResponseCodes;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ResponseHeader {

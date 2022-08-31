@@ -2,7 +2,7 @@ use std::error::Error;
 
 use log::debug;
 
-use crate::{bgx_response::BgxResponse, scanned_device::ScannedDevice};
+use crate::{response::BgxResponse, scanned_device::ScannedDevice};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ScanResult(pub Vec<ScannedDevice>);
@@ -30,7 +30,7 @@ impl TryFrom<BgxResponse> for ScanResult {
 
 #[test]
 fn scan_result_1() {
-    use crate::bgx_response::ResponseCodes;
+    use crate::response::ResponseCodes;
     use crate::response_header::ResponseHeader;
 
     let resp: BgxResponse = BgxResponse::DataWithHeader(ResponseHeader{response_code:ResponseCodes::Success,length:123}, (Vec::new(),"!  # RSSI BD_ADDR           Device Name\r\n#  1  -47 d0:cf:5e:82:85:06 LOR-8090\r\n#  2  -52 00:0d:6f:a7:a1:54 LOR-8090\r\n".to_string(),Vec::new())) ;
