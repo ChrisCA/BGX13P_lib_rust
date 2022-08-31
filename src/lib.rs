@@ -16,7 +16,7 @@ mod scan;
 mod scanned_device;
 
 /// searches and returns serial port devices connected via USB
-fn find_module() -> Result<Vec<SerialPortInfo>, Box<dyn Error>> {
+fn detect_modules() -> Result<Vec<SerialPortInfo>, Box<dyn Error>> {
     let ports = serialport::available_ports()?;
     trace!("Detected the following ports: {:?}", &ports);
 

@@ -10,7 +10,7 @@ use std::{
 
 use crate::{
     command::Command,
-    find_module,
+    detect_modules,
     fw::parse_fw_ver,
     response::{BgxResponse, ResponseCodes},
     scan::ScanResult,
@@ -23,7 +23,7 @@ pub struct Bgx13p {
 
 impl Bgx13p {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        let p = find_module()?;
+        let p = detect_modules()?;
 
         for e in &p {
             info!("Found port: {}", e.port_name);
