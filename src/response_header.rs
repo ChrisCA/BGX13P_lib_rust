@@ -2,8 +2,8 @@ use std::error::Error;
 
 use crate::bgx_response::ResponseCodes;
 
-#[derive(Debug, PartialEq)]
-pub(crate) struct ResponseHeader {
+#[derive(Debug, PartialEq, Eq)]
+pub struct ResponseHeader {
     pub response_code: ResponseCodes,
     pub length: u16,
 }

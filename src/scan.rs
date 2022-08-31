@@ -1,27 +1,42 @@
-use std::{error::Error, str::FromStr};
+use std::error::Error;
 
-use crate::scanned_device::ScannedDevice;
+use log::debug;
+
+use crate::{bgx_response::BgxResponse, scanned_device::ScannedDevice};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-struct ScanResult(Vec<ScannedDevice>);
+pub struct ScanResult(pub Vec<ScannedDevice>);
 
-impl FromStr for ScanResult {
-    type Err = Box<dyn Error>;
+impl TryFrom<BgxResponse> for ScanResult {
+    type Error = Box<dyn Error>;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        todo!()
+    fn try_from(value: BgxResponse) -> Result<Self, Self::Error> {
+        let value = match value {
+            BgxResponse::DataWithHeader(_, (_, s, _)) => s,
+            BgxResponse::DataWithoutHeader(d) => {
+                return Err(format!("Data without header cannot be a scan result: {:?}", d).into())
+            }
+        };
+
+        debug!("Scan results:\n{}", &value);
+
+        let lines = value.lines().skip(1);
+
+        Ok(ScanResult(
+            lines.map(|f| f.parse().unwrap()).collect::<Vec<_>>(),
+        ))
     }
 }
 
 #[test]
 fn scan_result_1() {
-    const SCAN_RESULT: &str = "R000117\r\n!  # RSSI BD_ADDR           Device Name\r\n#  1  -47 d0:cf:5e:82:85:06 LOR-8090\r\n#  2  -52 00:0d:6f:a7:a1:54 LOR-8090\r\n";
-    let lines = SCAN_RESULT.lines().skip(2);
+    use crate::bgx_response::ResponseCodes;
+    use crate::response_header::ResponseHeader;
 
-    let res1 = lines
-        .map(|f| ScannedDevice::from_str(f).unwrap())
-        .collect::<Vec<_>>();
-    let res2 = vec![
+    let resp: BgxResponse = BgxResponse::DataWithHeader(ResponseHeader{response_code:ResponseCodes::Success,length:123}, (Vec::new(),"!  # RSSI BD_ADDR           Device Name\r\n#  1  -47 d0:cf:5e:82:85:06 LOR-8090\r\n#  2  -52 00:0d:6f:a7:a1:54 LOR-8090\r\n".to_string(),Vec::new())) ;
+    let res_test: ScanResult = resp.try_into().unwrap();
+
+    let res_made = ScanResult(vec![
         ScannedDevice {
             mac: "d0cf5e828506".to_string(),
             friendly_name: "LOR-8090".to_string(),
@@ -32,9 +47,9 @@ fn scan_result_1() {
             friendly_name: "LOR-8090".to_string(),
             rssi: -52,
         },
-    ];
+    ]);
 
-    assert_eq!(res1, res2);
+    assert_eq!(res_test, res_made);
 }
 
 // #[test]

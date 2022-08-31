@@ -1,5 +1,8 @@
 use std::{error::Error, str::FromStr};
 
+use log::trace;
+use tap::Tap;
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ScannedDevice {
     pub mac: String,
@@ -11,10 +14,22 @@ impl FromStr for ScannedDevice {
     type Err = Box<dyn Error>;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut spl = s.split_whitespace();
+        trace!("Parse ScannedDevice from: {}", s);
 
-        let rssi: i8 = spl.nth(2).ok_or("Couldn't get rssi on 2")?.parse()?;
-        let mac = spl.next().ok_or("Couldn't get mac on 3")?.replace(':', "");
+        let mut spl = s
+            .split_whitespace()
+            .tap(|spl| trace!("Split on whitespace: {:?}", spl));
+
+        let rssi = spl
+            .nth(2)
+            .ok_or("Couldn't get rssi on 2")?
+            .tap(|r| trace!("Value to be parsed to i8 RSSI: {}", r))
+            .parse()?;
+        let mac = spl
+            .next()
+            .ok_or("Couldn't get mac on 3")?
+            .tap(|r| trace!("Mac to parse: {}", r))
+            .replace(':', "");
         let friendly_name = spl
             .next()
             .ok_or("Couldn't get friendly_name on 4")?

@@ -8,14 +8,14 @@ use nom::{
     bytes::complete::{take_until, take_until1},
     error::VerboseError,
 };
-use scanned_device::ScannedDevice;
+use scan::ScanResult;
+
 use serialport::{
     DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortType, StopBits,
 };
 use std::{
     error::Error,
     io::{Read, Write},
-    str::FromStr,
     thread::sleep,
     time::Duration,
 };
@@ -115,7 +115,7 @@ impl Bgx13p {
 
     /// Scans for nearby BGX modules.
     /// Module must not be connect or scan will fail.
-    pub fn scan(&mut self) -> Result<Vec<ScannedDevice>, Box<dyn Error>> {
+    pub fn scan(&mut self) -> Result<ScanResult, Box<dyn Error>> {
         self.switch_to_command_mode()?;
 
         self.disconnect()?;
@@ -128,14 +128,7 @@ impl Bgx13p {
         let ans = self.read_answer(None)?;
         debug!("stop scan");
 
-        match ans {
-            BgxResponse::DataWithHeader(_, ans) => {
-                return ans.1.lines().map(ScannedDevice::from_str).collect();
-            }
-            BgxResponse::DataWithoutHeader(_) => {
-                Err("Got data without header when expecting scan answer".into())
-            }
-        }
+        ans.try_into()
     }
 
     /// writes a command to the module which ends with \r\n and errors on timeout

@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     if let Ok(mut bgx) = Bgx13p::new() {
         bgx.reach_well_known_state()?;
 
-        let macs = bgx.scan()?.into_iter().map(|d| d.mac).collect::<Vec<_>>();
+        let macs = bgx.scan()?.0.into_iter().map(|d| d.mac).collect::<Vec<_>>();
         debug!("Found: {:#?}", macs);
 
         loop {
