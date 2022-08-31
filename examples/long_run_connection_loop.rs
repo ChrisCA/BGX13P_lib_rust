@@ -2,7 +2,7 @@ use std::{error::Error, thread::sleep, time::Duration};
 
 use log::debug;
 use simple_logger::SimpleLogger;
-use BGX13P_lib_rust::*;
+use BGX13P_lib_rust::bgx::Bgx13p;
 
 fn main() -> Result<(), Box<dyn Error>> {
     SimpleLogger::new().init().unwrap();
