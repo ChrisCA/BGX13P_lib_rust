@@ -2,13 +2,13 @@ use std::{error::Error, thread::sleep, time::Duration};
 
 use log::debug;
 use simple_logger::SimpleLogger;
-use BGX13P_lib_rust::bgx::Bgx13p;
+use BGX13P_lib_rust::detect_modules;
 
 fn main() -> Result<(), Box<dyn Error>> {
     SimpleLogger::new().init().unwrap();
     // let macs = vec!["d0cf5e828506", /* "000d6fa7a5e8",*/ "000d6fa7a154"];
 
-    if let Ok(mut bgx) = Bgx13p::new() {
+    if let Some(bgx) = detect_modules().unwrap().first_mut() {
         bgx.reach_well_known_state()?;
 
         let macs = bgx.scan()?.0.into_iter().map(|d| d.mac).collect::<Vec<_>>();

@@ -1,6 +1,6 @@
-use log::{debug, info, trace, warn};
+use log::{debug, info, trace};
 
-use serialport::{DataBits, FlowControl, Parity, SerialPort, StopBits};
+use serialport::{DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, StopBits};
 use std::{
     error::Error,
     io::{Read, Write},
@@ -10,7 +10,6 @@ use std::{
 
 use crate::{
     command::Command,
-    detect_modules,
     fw::parse_fw_ver,
     response::{BgxResponse, ResponseCodes},
     scan::ScanResult,
@@ -22,23 +21,8 @@ pub struct Bgx13p {
 }
 
 impl Bgx13p {
-    pub fn new() -> Result<Self, Box<dyn Error>> {
-        let p = detect_modules()?;
-
-        for e in &p {
-            info!("Found port: {}", e.port_name);
-        }
-
-        let port_name = match p.first() {
-            Some(p) => &p.port_name,
-            None => {
-                warn!("Couldn't determine USB port");
-
-                return Err("Couldn't determine USB port".into());
-            }
-        };
-
-        let op = serialport::new(port_name, 115200)
+    pub fn new(pi: SerialPortInfo) -> Result<Self, Box<dyn Error>> {
+        let op = serialport::new(pi.port_name, 115200)
             .data_bits(DataBits::Eight)
             .flow_control(FlowControl::None)
             .parity(Parity::None)
