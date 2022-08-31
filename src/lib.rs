@@ -19,13 +19,13 @@ mod scanned_device;
 /// searches and returns serial port devices connected via USB
 pub fn detect_modules() -> Result<Vec<Bgx13p>, Box<dyn Error>> {
     let ports = serialport::available_ports()?;
-    trace!("Detected the following ports: {:?}", &ports);
+    trace!("Detected the following ports: {:#?}", &ports);
 
     let ports = ports
         .into_iter()
         .filter(|p| {
             if let SerialPortType::UsbPort(n) = &p.port_type {
-                debug!("Found USB port: {:?}", &n);
+                debug!("Found USB port: {:#?}", &n);
 
                 if let Some(m) = &n.manufacturer {
                     if m.contains("Silicon Labs") || m.contains("Cygnal") || m.contains("CP21") {
