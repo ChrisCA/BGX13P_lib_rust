@@ -374,7 +374,7 @@ impl Bgx13p {
     pub fn disconnect(&mut self) -> Result<(), Box<dyn Error>> {
         self.switch_to_command_mode()?;
 
-        // TODO: ConParams command is only available starting from BGX FW 1.2045
+        // ConParams command is only available starting from BGX FW 1.2045
         self.write_line(Command::ConParams, None)?;
         let r = self.read_answer(None)?;
         match r {
