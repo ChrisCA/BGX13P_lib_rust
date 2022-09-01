@@ -102,10 +102,10 @@ impl Bgx13p {
         trace!("FW version feedback: {}", answer);
 
         // parse FW version and check if compatible
-        // atm only BGX13P.1.2.2738.2-1524-2738 is considered
-        let _until_bgx = parse_fw_ver(answer)?;
-        info!("Found FW string: {:?}", _until_bgx);
-        let other_fw = _until_bgx.1 != "BGX13P.1.2.2738.2-1524-2738";
+        // atm only BGX13P.1.2.2738 with multiple endings as ".2-1524-2738" is considered
+        let fw_version = parse_fw_ver(answer)?;
+        info!("Found FW string: {:?}", fw_version);
+        let other_fw = !fw_version.contains("BGX13P.1.2.2738");
 
         self.apply_default_settings(other_fw)?;
 
