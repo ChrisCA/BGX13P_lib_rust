@@ -25,8 +25,13 @@ impl Command {
     pub const LINEBREAK: &'static [u8; 2] = b"\r\n";
     pub const ConParams: &'static [u8; 10] = b"con params";
     /*
-    R000009\r\n
-    Success\r\n
+    !  Param Value\r\n
+    #  Addr  D0CF5E828DF6\r\n
+    #  Itvl  12\r\n
+    #  Mtu   250\r\n
+    #  Phy   1m\r\n
+    #  Tout  400\r\n
+    #  Err   0000\r\n
     */
     pub const SCAN: &'static [u8; 4] = b"scan";
     /*
