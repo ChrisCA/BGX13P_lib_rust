@@ -4,6 +4,7 @@
 
 pub mod bgx;
 mod command;
+mod con_param;
 mod fw;
 pub mod mac;
 mod response;
