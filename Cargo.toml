@@ -9,7 +9,7 @@ log = "0.4.17"
 nom = "7.1.1"
 serialport = "4.2.0"
 tap = "1.0.1"
-thiserror = "1.0.32"
+thiserror = "1.0.37"
 
 [dev-dependencies]
 simple_logger = "2.3.0"
