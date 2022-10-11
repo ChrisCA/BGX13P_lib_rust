@@ -1,8 +1,9 @@
-use std::{error::Error, thread::sleep, time::Duration};
+use anyhow::Result;
+use std::{thread::sleep, time::Duration};
 
 use BGX13P_lib_rust::bgx::detect_modules;
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     if let Some(bgx) = detect_modules().unwrap().first_mut() {
         bgx.reach_well_known_state()?;
 
@@ -14,6 +15,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
         Ok(())
     } else {
-        Err("Couldn't apply settings".into())
+        Err(anyhow::anyhow!("Couldn't apply settings"))
     }
 }

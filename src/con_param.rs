@@ -1,5 +1,6 @@
 use std::error::Error;
 
+use anyhow::Result;
 use log::debug;
 use nom::{
     bytes::complete::tag,
@@ -45,7 +46,7 @@ impl TryFrom<BgxResponse> for ConInfo {
 }
 
 /// takes the con_param answer (wo header) and parses the MAC from it
-fn parse_con_param(s: &str) -> Result<Mac, Box<dyn Error>> {
+fn parse_con_param(s: &str) -> Result<Mac> {
     preceded(
         tuple((
             tag("!"),
@@ -61,9 +62,10 @@ fn parse_con_param(s: &str) -> Result<Mac, Box<dyn Error>> {
         )),
         hex_digit1,
     )(s)
-    .map_err(|e: nom::Err<VerboseError<_>>| e.to_string())?
+    .map_err(|e: nom::Err<VerboseError<_>>| anyhow::anyhow!(e.to_string()))?
     .1
     .parse()
+    .map_err(|e: Box<dyn Error>| anyhow::anyhow!(e.to_string()))
 }
 
 #[test]

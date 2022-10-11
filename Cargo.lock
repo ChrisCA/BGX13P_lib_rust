@@ -6,6 +6,7 @@ version = 3
 name = "BGX13P_lib_rust"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "log",
  "nom",
  "serialport",
@@ -43,6 +44,12 @@ checksum = "b4f55bd91a0978cbfd91c457a164bab8b4001c833b7f323132c0a4e1922dd44e"
 dependencies = [
  "memchr",
 ]
+
+[[package]]
+name = "anyhow"
+version = "1.0.65"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "98161a4e3e2184da77bb14f02184cdd111e83bbbcc9979dfee3c44b9a85f5602"
 
 [[package]]
 name = "atty"

@@ -1,16 +1,15 @@
+use anyhow::Result;
 use nom::{
     bytes::complete::{take_until, take_until1},
     error::VerboseError,
     sequence::preceded,
 };
 
-use std::error::Error;
-
-pub fn parse_fw_ver(s: &str) -> Result<&str, Box<dyn Error>> {
+pub fn parse_fw_ver(s: &str) -> Result<&str> {
     // WARN: Do not match on BGX13P. instead of BGX13 here as this reported name is not consistent over older versions
 
     Ok(preceded(take_until("BGX13"), take_until1("\r\n"))(s)
-        .map_err(|e: nom::Err<VerboseError<_>>| e.to_string())?
+        .map_err(|e: nom::Err<VerboseError<_>>| anyhow::anyhow!(e.to_string()))?
         .1)
 }
 
