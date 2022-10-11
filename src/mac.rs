@@ -2,7 +2,7 @@ use std::{error::Error, fmt::Display, str::FromStr};
 
 /// MAC suitable usage with BGX13P commands
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Mac([u8; 6]);
+pub struct Mac(pub [u8; 6]);
 
 impl Display for Mac {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
