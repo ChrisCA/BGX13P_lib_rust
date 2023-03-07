@@ -1,15 +1,14 @@
-use log::{debug, trace};
-use nom::{
-    bytes::complete::{take, take_till},
-    character::complete::{char, crlf, digit1},
-    error::VerboseError,
-    sequence::delimited,
-};
+use log::{debug, warn};
 use thiserror::Error;
+use winnow::{
+    bytes::{any, take},
+    multi::many_till0,
+    IResult,
+};
 
-use crate::response_header::ResponseHeader;
+use crate::response_header::{parse_header, ResponseHeader};
 
-#[derive(Debug, PartialEq, Eq, Error)]
+#[derive(Debug, PartialEq, Eq, Error, Clone, Copy)]
 pub enum ResponseCodes {
     #[error("Success")]
     Success,
@@ -59,58 +58,42 @@ impl TryFrom<u8> for ResponseCodes {
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub(crate) enum BgxResponse {
-    DataWithHeader(ResponseHeader, (Vec<u8>, String, Vec<u8>)),
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum BgxResponse {
+    DataWithHeader(ResponseHeader, String),
     DataWithoutHeader(Vec<u8>),
 }
 
-impl TryFrom<&[u8]> for BgxResponse {
-    type Error = Box<dyn std::error::Error>;
+// parses any BGX response
+pub fn parse_response(input: &[u8]) -> IResult<&[u8], BgxResponse> {
+    /*
+    SAMPLE:
+    R000029\r\n
+    BGX13P.1.2.2738.2-1524-2738\r\n
+    */
+    debug!("BGX answered: {:?}", input);
 
-    /// takes input, returns optional content before, the actual content and the optional content after
-    fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
-        /*
-        SAMPLE:
-        R000029\r\n
-        BGX13P.1.2.2738.2-1524-2738\r\n
-        */
-        debug!("BGX answered: {:?}", value);
-
-        // split everything off before the 'R'
-        let (after_header, before_header) =
-            take_till(|c| c == b'R')(value).map_err(|e: nom::Err<VerboseError<_>>| {
-                format!("Didn't get any data when reading from BGX due to: {}", e)
-            })?;
-
-        // early return if no 'R' is found
-        if after_header.is_empty() {
-            return Ok(BgxResponse::DataWithoutHeader(before_header.to_vec()));
+    // return response if no header has been found, otherwise show if there has been something before and get header
+    let (input, header) = match many_till0(any, parse_header)(input) {
+        Ok((input, (before, header))) => {
+            let before: Vec<u8> = before; // just for defining the type
+            if !before.is_empty() {
+                warn!("Data before header: {:?}", before);
+            }
+            (input, header)
         }
+        Err(_) => return Ok((b"", BgxResponse::DataWithoutHeader(input.to_vec()))),
+    };
 
-        // get out the relevant numbers from the header
-        let (module_message, header) = delimited(char('R'), digit1, crlf)(after_header)
-            .map_err(|e: nom::Err<VerboseError<_>>| format!("{}", e))?;
+    debug!("Header: {:?}", &header);
+    let (input, answer) = take(header.data_length)(input)?;
 
-        // parse header
-        let header = ResponseHeader::try_from(header)?;
-        trace!("Parsed header: {:?}", header);
+    let answer = match String::from_utf8(answer.to_vec()) {
+        Ok(answer) => answer,
+        Err(_) => format!("{answer:?}"),
+    };
 
-        // split of the part of the module answer which has been communicated via the header
-        let (after_message, module_message) = take(header.length)(module_message)
-            .map_err(|e: nom::Err<VerboseError<_>>| format!("{}", e))?;
-
-        let module_message = std::str::from_utf8(module_message)?;
-
-        Ok(BgxResponse::DataWithHeader(
-            header,
-            (
-                before_header.to_vec(),
-                module_message.to_string(),
-                after_message.to_vec(),
-            ),
-        ))
-    }
+    Ok((input, BgxResponse::DataWithHeader(header, answer)))
 }
 
 #[test]
@@ -121,15 +104,11 @@ fn module_response_test_1() {
         BgxResponse::DataWithHeader(
             ResponseHeader {
                 response_code: ResponseCodes::Success,
-                length: 29
+                data_length: 29
             },
-            (
-                Vec::new(),
-                "BGX13P.1.2.2738.2-1524-2738\r\n".to_string(),
-                Vec::new()
-            )
+            "BGX13P.1.2.2738.2-1524-2738\r\n".to_string(),
         ),
-        BgxResponse::try_from(input1).unwrap()
+        parse_response(input1).unwrap().1
     )
 }
 
@@ -167,14 +146,10 @@ fn module_response_test_2() {
         BgxResponse::DataWithHeader(
             ResponseHeader {
                 response_code: ResponseCodes::Success,
-                length: 231
+                data_length: 231
             },
-            (
-                Vec::new(),
-                String::from_utf8(input_wo_header.to_vec()).unwrap(),
-                Vec::new()
-            )
+            String::from_utf8(input_wo_header.to_vec()).unwrap(),
         ),
-        BgxResponse::try_from(input).unwrap()
+        parse_response(input).unwrap().1
     )
 }

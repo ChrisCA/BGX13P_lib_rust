@@ -12,7 +12,7 @@ impl TryFrom<BgxResponse> for ScanResult {
 
     fn try_from(value: BgxResponse) -> Result<Self, Self::Error> {
         let value = match value {
-            BgxResponse::DataWithHeader(_, (_, s, _)) => s,
+            BgxResponse::DataWithHeader(_, s) => s,
             BgxResponse::DataWithoutHeader(d) => {
                 return Err(format!("Data without header cannot be a scan result: {:?}", d).into())
             }
@@ -33,7 +33,7 @@ fn scan_result_1() {
     use crate::response::ResponseCodes;
     use crate::response_header::ResponseHeader;
 
-    let resp: BgxResponse = BgxResponse::DataWithHeader(ResponseHeader{response_code:ResponseCodes::Success,length:123}, (Vec::new(),"!  # RSSI BD_ADDR           Device Name\r\n#  1  -47 d0:cf:5e:82:85:06 LOR-8090\r\n#  2  -52 00:0d:6f:a7:a1:54 LOR-8090\r\n".to_string(),Vec::new())) ;
+    let resp: BgxResponse = BgxResponse::DataWithHeader(ResponseHeader{response_code:ResponseCodes::Success,data_length:123}, "!  # RSSI BD_ADDR           Device Name\r\n#  1  -47 d0:cf:5e:82:85:06 LOR-8090\r\n#  2  -52 00:0d:6f:a7:a1:54 LOR-8090\r\n".to_string()) ;
     let res_test: ScanResult = resp.try_into().unwrap();
 
     let res_made = ScanResult(vec![

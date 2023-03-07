@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use log::{debug, info, trace, warn};
 use serialport::{
     DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortType, StopBits,
@@ -9,12 +9,13 @@ use std::{
     thread::sleep,
     time::Duration,
 };
+use winnow::FinishIResult;
 
 use crate::{
     command::Command,
     fw::parse_fw_ver,
     mac::Mac,
-    response::{BgxResponse, ResponseCodes},
+    response::{parse_response, BgxResponse, ResponseCodes},
     scan::ScanResult,
 };
 
@@ -103,7 +104,9 @@ impl Bgx13p {
 
         // parse FW version and check if compatible
         // atm only BGX13P.1.2.2738 with multiple endings as ".2-1524-2738" is considered
-        let fw_version = parse_fw_ver(answer)?;
+        let (_, fw_version) = parse_fw_ver(answer)
+            .finish_err()
+            .map_err(|e| e.into_owned())?;
         info!("Found FW string: {:?}", fw_version);
         let other_fw = !fw_version.contains("BGX13P.1.2.2738");
 
@@ -160,7 +163,7 @@ impl Bgx13p {
                 "Got data with header {:?} but expected passthrough payload from BGX module.",
                 h
             )),
-            BgxResponse::DataWithoutHeader(r) => Ok(r),
+            BgxResponse::DataWithoutHeader(r) => Ok(r.to_vec()),
         }
     }
 
@@ -191,10 +194,11 @@ impl Bgx13p {
             .take_while(|f| f.is_ok())
             .collect::<Result<_, _>>()?;
 
-        let header = BgxResponse::try_from(bytes.as_slice())
-            .map_err(|e: Box<dyn Error>| anyhow::anyhow!(e.to_string()))?;
+        let (_, resp) = parse_response(&bytes)
+            .finish_err()
+            .map_err(|e| anyhow!("{e:?}"))?;
 
-        Ok(header)
+        Ok(resp)
         // do not return an error because of response code here as this is a module error but not an error in the read-answer-process
         // match h.response_code {
         //     ResponseCodes::Success => (),
@@ -389,7 +393,7 @@ impl Bgx13p {
                         !  Param Value\r\n
                         #  Err   0208\r\n
                     */
-                    if ans.1.contains("Addr") {
+                    if ans.contains("Addr") {
                         self.write_line(Command::Disconnect, None)?;
                         self.read_answer(Some(Command::TIMEOUT_DISCONNECT))?;
 

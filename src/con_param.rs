@@ -1,12 +1,12 @@
-use std::error::Error;
+use std::str::FromStr;
 
-use anyhow::Result;
+use anyhow::{anyhow, Error, Result};
 use log::debug;
-use nom::{
-    bytes::complete::tag,
-    character::complete::{hex_digit1, multispace1},
-    error::VerboseError,
-    sequence::{preceded, tuple},
+use winnow::{
+    bytes::tag,
+    character::{hex_digit1, multispace1},
+    sequence::preceded,
+    FinishIResult, IResult, Parser,
 };
 
 use crate::{mac::Mac, response::BgxResponse};
@@ -25,30 +25,33 @@ pub struct ConInfo(Mac);
 */
 
 impl TryFrom<BgxResponse> for ConInfo {
-    type Error = Box<dyn Error>;
+    type Error = Error;
 
     fn try_from(value: BgxResponse) -> Result<Self, Self::Error> {
         let value = match value {
-            BgxResponse::DataWithHeader(_, (_, s, _)) => s,
+            BgxResponse::DataWithHeader(_, s) => s,
             BgxResponse::DataWithoutHeader(d) => {
-                return Err(
-                    format!("Data without header cannot be a con param result: {:?}", d).into(),
-                )
+                return Err(anyhow!(
+                    "Data without header cannot be a con param result: {:?}",
+                    d
+                ))
             }
         };
 
         debug!("con param results:\n{}", &value);
 
-        let mac = parse_con_param(&value)?;
+        let (_, mac) = parse_con_param(&value)
+            .finish_err()
+            .map_err(|e| e.into_owned())?;
 
         Ok(ConInfo(mac))
     }
 }
 
 /// takes the con_param answer (wo header) and parses the MAC from it
-fn parse_con_param(s: &str) -> Result<Mac> {
+fn parse_con_param(s: &str) -> IResult<&str, Mac> {
     preceded(
-        tuple((
+        (
             tag("!"),
             multispace1,
             tag("Param"),
@@ -59,13 +62,11 @@ fn parse_con_param(s: &str) -> Result<Mac> {
             multispace1,
             tag("Addr"),
             multispace1,
-        )),
+        ),
         hex_digit1,
-    )(s)
-    .map_err(|e: nom::Err<VerboseError<_>>| anyhow::anyhow!(e.to_string()))?
-    .1
-    .parse()
-    .map_err(|e: Box<dyn Error>| anyhow::anyhow!(e.to_string()))
+    )
+    .map_res(Mac::from_str)
+    .parse_next(s)
 }
 
 #[test]
@@ -80,7 +81,7 @@ fn test_parse_con_info() {
 
     let ex_res = ConInfo("D0CF5E828DF6".parse().unwrap());
 
-    let test_res = ConInfo(parse_con_param(CON_INFO).unwrap());
+    let test_res = ConInfo(parse_con_param(CON_INFO).unwrap().1);
 
     assert_eq!(ex_res, test_res)
 }

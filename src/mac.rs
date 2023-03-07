@@ -1,4 +1,6 @@
-use std::{error::Error, fmt::Display, str::FromStr};
+use std::{fmt::Display, str::FromStr};
+
+use anyhow::{anyhow, Context, Error};
 
 /// MAC suitable usage with BGX13P commands
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -15,21 +17,36 @@ impl Display for Mac {
 }
 
 impl FromStr for Mac {
-    type Err = Box<dyn Error>;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.replace(':', "").to_lowercase();
         if s.len() == 12 {
             Ok(Self([
-                u8::from_str_radix(s.get(..2).ok_or("Couldn't get index from radix str")?, 16)?,
-                u8::from_str_radix(s.get(2..4).ok_or("Couldn't get index from radix str")?, 16)?,
-                u8::from_str_radix(s.get(4..6).ok_or("Couldn't get index from radix str")?, 16)?,
-                u8::from_str_radix(s.get(6..8).ok_or("Couldn't get index from radix str")?, 16)?,
-                u8::from_str_radix(s.get(8..10).ok_or("Couldn't get index from radix str")?, 16)?,
-                u8::from_str_radix(s.get(10..).ok_or("Couldn't get index from radix str")?, 16)?,
+                u8::from_str_radix(s.get(..2).context("Couldn't get index from radix str")?, 16)?,
+                u8::from_str_radix(
+                    s.get(2..4).context("Couldn't get index from radix str")?,
+                    16,
+                )?,
+                u8::from_str_radix(
+                    s.get(4..6).context("Couldn't get index from radix str")?,
+                    16,
+                )?,
+                u8::from_str_radix(
+                    s.get(6..8).context("Couldn't get index from radix str")?,
+                    16,
+                )?,
+                u8::from_str_radix(
+                    s.get(8..10).context("Couldn't get index from radix str")?,
+                    16,
+                )?,
+                u8::from_str_radix(
+                    s.get(10..).context("Couldn't get index from radix str")?,
+                    16,
+                )?,
             ]))
         } else {
-            Err("Wrong size of MAC address".into())
+            Err(anyhow!("Wrong size of MAC address"))
         }
     }
 }
