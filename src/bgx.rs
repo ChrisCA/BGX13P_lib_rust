@@ -81,6 +81,8 @@ impl Bgx13p {
         Try to reach a well known state in which settings for further usage are set.
         This will also bring the module into the Command Mode and check for a compatible FW version.
     */
+    // this function is written in a way that it doesn't validate the protocol headers
+    // as the module might not yet be configured to utilize these headers
     pub fn reach_well_known_state(&mut self) -> Result<()> {
         // early return if we are already in a well known state
         if self.default_settings_applied {
@@ -107,7 +109,7 @@ impl Bgx13p {
         let (_, fw_version) = parse_fw_ver(answer)
             .finish_err()
             .map_err(|e| e.into_owned())?;
-        info!("Found FW string: {:?}", fw_version);
+        info!("Found FW string: {fw_version}");
         let other_fw = !fw_version.contains("BGX13P.1.2.2738");
 
         self.apply_default_settings(other_fw)?;
