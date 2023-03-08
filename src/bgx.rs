@@ -39,6 +39,9 @@ pub fn detect_modules() -> Result<Vec<Bgx13p>> {
                         );
                     }
                 }
+            } else if p.port_type == SerialPortType::Unknown {
+                warn!("Found serial port but this doesn't need to be a BGX neccessarily");
+                return true;
             }
 
             false
