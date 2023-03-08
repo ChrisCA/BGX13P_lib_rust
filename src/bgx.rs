@@ -150,7 +150,11 @@ impl Bgx13p {
     }
 
     /// writes a command to the module which ends with \r\n and errors on timeout
-    fn write_line(&mut self, cmd: &[u8], custom_timeout: Option<Duration>) -> Result<()> {
+    fn write_line(
+        &mut self,
+        cmd: &[u8],
+        custom_timeout: impl Into<Option<Duration>>,
+    ) -> Result<()> {
         let command = [cmd, Command::LINEBREAK].concat();
 
         self.write(&command, custom_timeout)?;
@@ -159,7 +163,7 @@ impl Bgx13p {
     }
 
     /// reads all available bytes from the module
-    pub fn read(&mut self, custom_timeout: Option<Duration>) -> Result<Vec<u8>> {
+    pub fn read(&mut self, custom_timeout: impl Into<Option<Duration>>) -> Result<Vec<u8>> {
         match self.read_answer(custom_timeout)? {
             BgxResponse::DataWithHeader(h, _) => Err(anyhow::anyhow!(
                 "Got data with header {:?} but expected passthrough payload from BGX module.",
@@ -170,8 +174,12 @@ impl Bgx13p {
     }
 
     // writes all byte to modules
-    pub fn write(&mut self, payload: &[u8], custom_timeout: Option<Duration>) -> Result<()> {
-        if let Some(custom_timeout) = custom_timeout {
+    pub fn write(
+        &mut self,
+        payload: &[u8],
+        custom_timeout: impl Into<Option<Duration>>,
+    ) -> Result<()> {
+        if let Some(custom_timeout) = custom_timeout.into() {
             self.port.set_timeout(custom_timeout)?;
         } else {
             self.port.set_timeout(Command::TIMEOUT_COMMON)?;
@@ -182,8 +190,8 @@ impl Bgx13p {
         Ok(())
     }
 
-    fn read_answer(&mut self, custom_timeout: Option<Duration>) -> Result<BgxResponse> {
-        if let Some(custom_timeout) = custom_timeout {
+    fn read_answer(&mut self, custom_timeout: impl Into<Option<Duration>>) -> Result<BgxResponse> {
+        if let Some(custom_timeout) = custom_timeout.into() {
             self.port.set_timeout(custom_timeout)?;
         } else {
             self.port.set_timeout(Command::TIMEOUT_COMMON)?;
@@ -239,7 +247,7 @@ impl Bgx13p {
 
         for cmd in cmds {
             // longer timeout as the "save" command may take longer
-            self.write_line(cmd, Some(Command::TIMEOUT_SETTINGS))?;
+            self.write_line(cmd, Command::TIMEOUT_SETTINGS)?;
             sleep(Duration::from_millis(200)); // here we do not use a read answer as it use rad until timeout and we do not know whether the header is already activated
             info!("Successfully applied setting");
         }
@@ -330,8 +338,8 @@ impl Bgx13p {
 
         self.disconnect()?;
 
-        self.write_line(&Command::Connect(mac), Some(Command::TIMEOUT_CONNECT))?;
-        let ans = self.read_answer(Some(Command::TIMEOUT_CONNECT))?;
+        self.write_line(&Command::Connect(mac), Command::TIMEOUT_CONNECT)?;
+        let ans = self.read_answer(Command::TIMEOUT_CONNECT)?;
 
         match ans {
             BgxResponse::DataWithHeader(h, _) => match h.response_code {
@@ -397,7 +405,7 @@ impl Bgx13p {
                     */
                     if ans.contains("Addr") {
                         self.write_line(Command::Disconnect, None)?;
-                        self.read_answer(Some(Command::TIMEOUT_DISCONNECT))?;
+                        self.read_answer(Command::TIMEOUT_DISCONNECT)?;
 
                         return Ok(());
                     }
