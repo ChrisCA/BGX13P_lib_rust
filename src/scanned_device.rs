@@ -1,5 +1,6 @@
-use std::{error::Error, str::FromStr};
+use std::str::FromStr;
 
+use anyhow::{Context, Error};
 use log::trace;
 use tap::Tap;
 
@@ -13,7 +14,7 @@ pub struct ScannedDevice {
 }
 
 impl FromStr for ScannedDevice {
-    type Err = Box<dyn Error>;
+    type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         trace!("Parse ScannedDevice from: {}", s);
@@ -24,17 +25,17 @@ impl FromStr for ScannedDevice {
 
         let rssi = spl
             .nth(2)
-            .ok_or("Couldn't get rssi on 2")?
+            .context("Couldn't get rssi on 2")?
             .tap(|r| trace!("Value to be parsed to i8 RSSI: {}", r))
             .parse()?;
         let mac = spl
             .next()
-            .ok_or("Couldn't get mac on 3")?
+            .context("Couldn't get mac on 3")?
             .tap(|r| trace!("Mac to parse: {}", r))
             .parse()?;
         let friendly_name = spl
             .next()
-            .ok_or("Couldn't get friendly_name on 4")?
+            .context("Couldn't get friendly_name on 4")?
             .to_string();
 
         Ok(Self {

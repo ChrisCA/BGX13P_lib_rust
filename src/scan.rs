@@ -1,5 +1,6 @@
-use std::error::Error;
+use std::str::FromStr;
 
+use anyhow::{anyhow, Error};
 use log::debug;
 
 use crate::{response::BgxResponse, scanned_device::ScannedDevice};
@@ -8,13 +9,15 @@ use crate::{response::BgxResponse, scanned_device::ScannedDevice};
 pub struct ScanResult(pub Vec<ScannedDevice>);
 
 impl TryFrom<BgxResponse> for ScanResult {
-    type Error = Box<dyn Error>;
+    type Error = Error;
 
     fn try_from(value: BgxResponse) -> Result<Self, Self::Error> {
         let value = match value {
             BgxResponse::DataWithHeader(_, s) => s,
             BgxResponse::DataWithoutHeader(d) => {
-                return Err(format!("Data without header cannot be a scan result: {:?}", d).into())
+                return Err(anyhow!(
+                    "Data without header cannot be a scan result: {d:?}"
+                ))
             }
         };
 
@@ -23,7 +26,9 @@ impl TryFrom<BgxResponse> for ScanResult {
         let lines = value.lines().skip(1);
 
         Ok(ScanResult(
-            lines.map(|f| f.parse().unwrap()).collect::<Vec<_>>(),
+            lines
+                .map(ScannedDevice::from_str)
+                .collect::<Result<_, _>>()?,
         ))
     }
 }

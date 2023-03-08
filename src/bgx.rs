@@ -4,7 +4,6 @@ use serialport::{
     DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortType, StopBits,
 };
 use std::{
-    error::Error,
     io::{Read, Write},
     thread::sleep,
     time::Duration,
@@ -51,7 +50,7 @@ pub fn detect_modules() -> Result<Vec<Bgx13p>> {
                 None
             }
         })
-        .collect::<Vec<_>>();
+        .collect();
 
     Ok(ports)
 }
@@ -99,7 +98,7 @@ impl Bgx13p {
             .as_mut()
             .bytes()
             .take_while(|f| f.is_ok())
-            .collect::<Result<Vec<_>, std::io::Error>>()?;
+            .collect::<Result<_, _>>()?;
 
         let answer = std::str::from_utf8(&answer)?;
         trace!("FW version feedback: {}", answer);
@@ -116,7 +115,7 @@ impl Bgx13p {
 
         // verify success
         self.write_line(b"", None)?;
-        let answer = self.read_answer(None)?;
+        let answer = self.read_bgx_response(None)?;
 
         if let BgxResponse::DataWithHeader(n, _) = answer {
             if ResponseCodes::Success == n.response_code {
@@ -133,20 +132,20 @@ impl Bgx13p {
     /// Scans for nearby BGX modules.
     /// Module must not be connect or scan will fail.
     pub fn scan(&mut self) -> Result<ScanResult> {
+        debug!("BGX starts scanning for devices...");
+
         self.switch_to_command_mode()?;
-
         self.disconnect()?;
-
         self.write_line(Command::SCAN, None)?;
-        self.read_answer(None)?;
-        debug!("start scan");
+        self.read_bgx_response(None)?;
         sleep(Duration::from_secs(10));
         self.write_line(Command::SCAN_RESULTS, None)?;
-        let ans = self.read_answer(None)?;
-        debug!("stop scan");
+        let ans = self.read_bgx_response(None)?;
 
-        ans.try_into()
-            .map_err(|e: Box<dyn Error>| anyhow::anyhow!(e.to_string()))
+        let res = ans.try_into()?;
+        debug!("BGX finished scanning for devices");
+
+        Ok(res)
     }
 
     /// writes a command to the module which ends with \r\n and errors on timeout
@@ -157,45 +156,40 @@ impl Bgx13p {
     ) -> Result<()> {
         let command = [cmd, Command::LINEBREAK].concat();
 
-        self.write(&command, custom_timeout)?;
-
-        Ok(())
+        self.write_all_with_timeout(&command, custom_timeout)
     }
 
     /// reads all available bytes from the module
-    pub fn read(&mut self, custom_timeout: impl Into<Option<Duration>>) -> Result<Vec<u8>> {
-        match self.read_answer(custom_timeout)? {
-            BgxResponse::DataWithHeader(h, _) => Err(anyhow::anyhow!(
-                "Got data with header {:?} but expected passthrough payload from BGX module.",
-                h
+    pub fn read_all_with_timeout(
+        &mut self,
+        timeout: impl Into<Option<Duration>>,
+    ) -> Result<Vec<u8>> {
+        match self.read_bgx_response(timeout)? {
+            BgxResponse::DataWithHeader(h, s) => Err(anyhow::anyhow!(
+                "Expected passthrough data from BGX module but got header {h:?} and answer {s:?}"
             )),
             BgxResponse::DataWithoutHeader(r) => Ok(r.to_vec()),
         }
     }
 
     // writes all byte to modules
-    pub fn write(
+    pub fn write_all_with_timeout(
         &mut self,
         payload: &[u8],
-        custom_timeout: impl Into<Option<Duration>>,
+        timeout: impl Into<Option<Duration>>,
     ) -> Result<()> {
-        if let Some(custom_timeout) = custom_timeout.into() {
-            self.port.set_timeout(custom_timeout)?;
-        } else {
-            self.port.set_timeout(Command::TIMEOUT_COMMON)?;
-        }
+        self.port
+            .set_timeout(timeout.into().unwrap_or(Command::TIMEOUT_COMMON))?;
 
         self.port.write_all(payload)?;
 
         Ok(())
     }
 
-    fn read_answer(&mut self, custom_timeout: impl Into<Option<Duration>>) -> Result<BgxResponse> {
-        if let Some(custom_timeout) = custom_timeout.into() {
-            self.port.set_timeout(custom_timeout)?;
-        } else {
-            self.port.set_timeout(Command::TIMEOUT_COMMON)?;
-        }
+    /// reads any BGX response but does not validate whether the response code is and error response
+    fn read_bgx_response(&mut self, timeout: impl Into<Option<Duration>>) -> Result<BgxResponse> {
+        self.port
+            .set_timeout(timeout.into().unwrap_or(Command::TIMEOUT_COMMON))?;
 
         let bytes: Vec<u8> = self
             .port
@@ -206,14 +200,9 @@ impl Bgx13p {
 
         let (_, resp) = parse_response(&bytes)
             .finish_err()
-            .map_err(|e| anyhow!("{e:?}"))?;
+            .map_err(|e| anyhow!("BGX response error: {e:?}"))?;
 
         Ok(resp)
-        // do not return an error because of response code here as this is a module error but not an error in the read-answer-process
-        // match h.response_code {
-        //     ResponseCodes::Success => (),
-        //     _ => return Err(format!(h.response_code)),
-        // }
     }
 
     /// resets the module to factory default and applies default settings
@@ -257,7 +246,7 @@ impl Bgx13p {
             .as_mut()
             .bytes()
             .take_while(|f| f.is_ok())
-            .collect::<Result<Vec<_>, std::io::Error>>()?;
+            .collect::<Result<_, _>>()?;
 
         let answer = std::str::from_utf8(&bytes)?;
         trace!("Applied settings read: {}", answer);
@@ -287,19 +276,19 @@ impl Bgx13p {
             .as_mut()
             .bytes()
             .take_while(|f| f.is_ok())
-            .collect::<Result<Vec<_>, std::io::Error>>()?;
+            .collect::<Result<Vec<_>, _>>()?;
 
         // here we write two times and then read
         // because we might have left over $$$ from an earlier command which hasn't been used as the device has not been in stream mode
         self.write_line(b"", None)?;
         self.write_line(b"", None)?;
 
-        let read_from_port = self
+        let read_from_port: Vec<u8> = self
             .port
             .as_mut()
             .bytes()
             .take_while(|f| f.is_ok())
-            .collect::<Result<Vec<_>, std::io::Error>>()?;
+            .collect::<Result<_, _>>()?;
 
         if !read_from_port.is_empty() {
             trace!("Got one or more Ready --> not in stream mode");
@@ -320,7 +309,7 @@ impl Bgx13p {
                 .as_mut()
                 .bytes()
                 .take_while(|f| f.is_ok())
-                .collect::<Result<Vec<_>, std::io::Error>>()?;
+                .collect::<Result<Vec<_>, _>>()?;
 
             debug!("Recheck if in stream mode...");
             self.switch_to_command_mode()?;
@@ -339,7 +328,7 @@ impl Bgx13p {
         self.disconnect()?;
 
         self.write_line(&Command::Connect(mac), Command::TIMEOUT_CONNECT)?;
-        let ans = self.read_answer(Command::TIMEOUT_CONNECT)?;
+        let ans = self.read_bgx_response(Command::TIMEOUT_CONNECT)?;
 
         match ans {
             BgxResponse::DataWithHeader(h, _) => match h.response_code {
@@ -349,7 +338,7 @@ impl Bgx13p {
                 }
                 ResponseCodes::SecurityMismatch => {
                     self.write_line(Command::ClearAllBondings, None)?;
-                    if let Ok(BgxResponse::DataWithHeader(h, _)) = self.read_answer(None) {
+                    if let Ok(BgxResponse::DataWithHeader(h, _)) = self.read_bgx_response(None) {
                         if h.response_code == ResponseCodes::Success {
                             return Err(anyhow::anyhow!(
                                 "Security mismatch but performed clear bonding on device"
@@ -381,7 +370,7 @@ impl Bgx13p {
 
         // ConParams command is only available starting from BGX FW 1.2045
         self.write_line(Command::ConParams, None)?;
-        let r = self.read_answer(None)?;
+        let r = self.read_bgx_response(None)?;
         match r {
             BgxResponse::DataWithHeader(h, ans) => match h.response_code {
                 ResponseCodes::Success => {
@@ -405,7 +394,7 @@ impl Bgx13p {
                     */
                     if ans.contains("Addr") {
                         self.write_line(Command::Disconnect, None)?;
-                        self.read_answer(Command::TIMEOUT_DISCONNECT)?;
+                        self.read_bgx_response(Command::TIMEOUT_DISCONNECT)?;
 
                         return Ok(());
                     }
