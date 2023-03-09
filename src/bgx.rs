@@ -1,13 +1,12 @@
 use anyhow::{anyhow, Result};
-use log::{debug, info, trace, warn};
-use serialport::{
-    DataBits, FlowControl, Parity, SerialPort, SerialPortInfo, SerialPortType, StopBits,
-};
+use log::{debug, info, trace};
+use serialport::{DataBits, FlowControl, Parity, SerialPort, SerialPortType, StopBits};
 use std::{
     io::{Read, Write},
     thread::sleep,
     time::Duration,
 };
+use tap::Tap;
 use winnow::FinishIResult;
 
 use crate::{
@@ -25,32 +24,39 @@ pub fn detect_modules() -> Result<Vec<Bgx13p>> {
 
     let ports = ports
         .into_iter()
-        .filter(|p| {
+        .filter_map(|p| {
             if let SerialPortType::UsbPort(n) = &p.port_type {
                 debug!("Found USB port: {:#?}", &n);
 
-                if let Some(m) = &n.manufacturer {
-                    if m.contains("Silicon Labs") || m.contains("Cygnal") || m.contains("CP21") {
-                        return true;
-                    } else {
-                        warn!(
-                            "Found UsbPort but manufacturer string {} didn't match for BGX",
-                            m
-                        );
-                    }
+                if n.manufacturer
+                    .as_ref()
+                    .map(|m| {
+                        m.contains("Silicon Labs") || m.contains("Cygnal") || m.contains("CP21")
+                    })
+                    .unwrap_or(false)
+                {
+                    return Some(p.port_name);
                 }
             }
 
-            false
+            None
         })
-        .filter_map(|p| match Bgx13p::new(p) {
+        .filter_map(|p| match Bgx13p::new(&p) {
             Ok(m) => Some(m),
             Err(e) => {
                 info!("USB device not used as BGX due to: {}", e);
                 None
             }
         })
-        .collect();
+        .collect::<Vec<_>>()
+        .tap_mut(|v| {
+            // try to add a default best guess USB connection if detection of BGX fails
+            if v.is_empty() {
+                if let Ok(bgx) = Bgx13p::new("/dev/ttyUSB0") {
+                    v.push(bgx);
+                }
+            }
+        });
 
     Ok(ports)
 }
@@ -61,8 +67,8 @@ pub struct Bgx13p {
 }
 
 impl Bgx13p {
-    fn new(pi: SerialPortInfo) -> Result<Self> {
-        let op = serialport::new(pi.port_name, 115200)
+    fn new(port_name: &str) -> Result<Self> {
+        let op = serialport::new(port_name, 115200)
             .data_bits(DataBits::Eight)
             .flow_control(FlowControl::None)
             .parity(Parity::None)
