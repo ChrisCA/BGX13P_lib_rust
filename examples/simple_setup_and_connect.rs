@@ -1,20 +1,33 @@
 use anyhow::Result;
-use std::{thread::sleep, time::Duration};
-
-use BGX13P_lib_rust::bgx::detect_modules;
+use log::{error, info};
+use simple_logger::SimpleLogger;
+use std::{
+    net::{SocketAddr, TcpListener},
+    thread::sleep,
+    time::Duration,
+};
+use BGX13P_lib_rust::bgx::Bgx13p;
 
 fn main() -> Result<()> {
-    if let Some(bgx) = detect_modules().unwrap().first_mut() {
-        bgx.reach_well_known_state()?;
+    SimpleLogger::new().init().unwrap();
 
-        bgx.connect(&"d0cf5e828506".parse().unwrap())?;
+    let listener = TcpListener::bind(SocketAddr::from(([0, 0, 0, 0], 56789))).unwrap();
+    info!("Start listening...");
+    loop {
+        match listener.accept() {
+            Ok((bgx, addr)) => {
+                info!("Got incoming connection from: {}", addr);
+                let mut bgx = Bgx13p::new(bgx).unwrap();
+                bgx.reach_well_known_state()?;
+                info!("Reached well known state");
 
-        sleep(Duration::from_secs(2));
+                bgx.connect(&"d0cf5e828506".parse().unwrap())?;
 
-        bgx.disconnect()?;
+                sleep(Duration::from_secs(2));
 
-        Ok(())
-    } else {
-        Err(anyhow::anyhow!("Couldn't apply settings"))
+                bgx.disconnect()?;
+            }
+            Err(e) => error!("{e}"),
+        };
     }
 }

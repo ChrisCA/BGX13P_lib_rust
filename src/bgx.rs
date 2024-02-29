@@ -1,12 +1,11 @@
 use anyhow::{anyhow, Result};
 use log::{debug, info, trace};
-use serialport::{DataBits, FlowControl, Parity, SerialPort, SerialPortType, StopBits};
 use std::{
     io::{Read, Write},
+    net::TcpStream,
     thread::sleep,
     time::Duration,
 };
-use tap::Tap;
 use winnow::FinishIResult;
 
 use crate::{
@@ -17,65 +16,13 @@ use crate::{
     scan::ScanResult,
 };
 
-/// searches and returns serial port devices connected via USB
-pub fn detect_modules() -> Result<Vec<Bgx13p>> {
-    let ports = serialport::available_ports()?;
-    trace!("Detected the following ports: {:#?}", &ports);
-
-    let ports = ports
-        .into_iter()
-        .filter_map(|p| {
-            if let SerialPortType::UsbPort(n) = &p.port_type {
-                debug!("Found USB port: {:#?}", &n);
-
-                if n.manufacturer
-                    .as_ref()
-                    .map(|m| {
-                        m.contains("Silicon Labs") || m.contains("Cygnal") || m.contains("CP21")
-                    })
-                    .unwrap_or(false)
-                {
-                    return Some(p.port_name);
-                }
-            }
-
-            None
-        })
-        .filter_map(|p| match Bgx13p::new(&p) {
-            Ok(m) => Some(m),
-            Err(e) => {
-                info!("USB device not used as BGX due to: {}", e);
-                None
-            }
-        })
-        .collect::<Vec<_>>()
-        .tap_mut(|v| {
-            // try to add a default best guess USB connection if detection of BGX fails
-            if v.is_empty() {
-                if let Ok(bgx) = Bgx13p::new("/dev/ttyUSB0") {
-                    v.push(bgx);
-                }
-            }
-        });
-
-    Ok(ports)
-}
-
 pub struct Bgx13p {
-    port: Box<dyn SerialPort>,
+    port: TcpStream,
     default_settings_applied: bool,
 }
 
 impl Bgx13p {
-    fn new(port_name: &str) -> Result<Self> {
-        let op = serialport::new(port_name, 115200)
-            .data_bits(DataBits::Eight)
-            .flow_control(FlowControl::None)
-            .parity(Parity::None)
-            .stop_bits(StopBits::One)
-            .timeout(Command::TIMEOUT_COMMON)
-            .open()?;
-
+    pub fn new(op: TcpStream) -> Result<Self> {
         Ok(Self {
             port: op,
             default_settings_applied: Default::default(),
@@ -99,9 +46,7 @@ impl Bgx13p {
         // first try to request the FW version within a certain timeout
         self.write_line(Command::GetVersion, None)?;
 
-        let answer: Vec<u8> = self
-            .port
-            .as_mut()
+        let answer: Vec<u8> = Read::by_ref(&mut self.port)
             .bytes()
             .take_while(|f| f.is_ok())
             .collect::<Result<_, _>>()?;
@@ -184,8 +129,9 @@ impl Bgx13p {
         payload: &[u8],
         timeout: impl Into<Option<Duration>>,
     ) -> Result<()> {
-        self.port
-            .set_timeout(timeout.into().unwrap_or(Command::TIMEOUT_COMMON))?;
+        let to = timeout.into().unwrap_or(Command::TIMEOUT_COMMON);
+        self.port.set_read_timeout(Some(to))?;
+        self.port.set_write_timeout(Some(to))?;
 
         self.port.write_all(payload)?;
 
@@ -194,12 +140,11 @@ impl Bgx13p {
 
     /// reads any BGX response but does not validate whether the response code is and error response
     fn read_bgx_response(&mut self, timeout: impl Into<Option<Duration>>) -> Result<BgxResponse> {
-        self.port
-            .set_timeout(timeout.into().unwrap_or(Command::TIMEOUT_COMMON))?;
+        let to = timeout.into().unwrap_or(Command::TIMEOUT_COMMON);
+        self.port.set_read_timeout(Some(to))?;
+        self.port.set_write_timeout(Some(to))?;
 
-        let bytes: Vec<u8> = self
-            .port
-            .as_mut()
+        let bytes: Vec<u8> = Read::by_ref(&mut self.port)
             .bytes()
             .take_while(|f| f.is_ok())
             .collect::<Result<_, _>>()?;
@@ -247,9 +192,7 @@ impl Bgx13p {
             info!("Successfully applied setting");
         }
 
-        let bytes: Vec<u8> = self
-            .port
-            .as_mut()
+        let bytes: Vec<u8> = Read::by_ref(&mut self.port)
             .bytes()
             .take_while(|f| f.is_ok())
             .collect::<Result<_, _>>()?;
@@ -274,12 +217,11 @@ impl Bgx13p {
     /// makes sure the module is not in stream mode anymore, should be ran before any other control commands should be send to the module
     fn switch_to_command_mode(&mut self) -> Result<()> {
         debug!("Check if in stream mode...");
-        self.port.set_timeout(Command::TIMEOUT_COMMON)?;
+        self.port.set_read_timeout(Some(Command::TIMEOUT_COMMON))?;
+        self.port.set_write_timeout(Some(Command::TIMEOUT_COMMON))?;
 
         // clear buffer to make sure what come later is nothing historical
-        let _ = self
-            .port
-            .as_mut()
+        let _ = Read::by_ref(&mut self.port)
             .bytes()
             .take_while(|f| f.is_ok())
             .collect::<Result<Vec<_>, _>>()?;
@@ -289,9 +231,7 @@ impl Bgx13p {
         self.write_line(b"", None)?;
         self.write_line(b"", None)?;
 
-        let read_from_port: Vec<u8> = self
-            .port
-            .as_mut()
+        let read_from_port: Vec<u8> = Read::by_ref(&mut self.port)
             .bytes()
             .take_while(|f| f.is_ok())
             .collect::<Result<_, _>>()?;
@@ -310,9 +250,7 @@ impl Bgx13p {
             self.port.write_all(Command::BreakSequence)?;
             sleep(Duration::from_millis(550)); // min. 500 ms silence on UART for breakout sequence
 
-            let _ = self
-                .port
-                .as_mut()
+            let _ = Read::by_ref(&mut self.port)
                 .bytes()
                 .take_while(|f| f.is_ok())
                 .collect::<Result<Vec<_>, _>>()?;
