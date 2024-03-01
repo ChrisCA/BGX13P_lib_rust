@@ -104,7 +104,12 @@ impl Bgx13p {
     ) -> Result<()> {
         let command = [cmd, Command::LINEBREAK].concat();
 
-        self.write_all_with_timeout(&command, custom_timeout)
+        self.write_all_with_timeout(&command, custom_timeout)?;
+
+        // TODO: thats a dirty workaround to bypass network delay and trivial parsing
+        sleep(Duration::from_millis(500));
+
+        Ok(())
     }
 
     /// reads all available bytes from the module
@@ -240,20 +245,18 @@ impl Bgx13p {
             trace!("Read from port test: {:?}", answer);
 
             return Ok(());
-        } else {
-            debug!("No answer, expect stream mode, try to leave...");
-            sleep(Duration::from_millis(550));
-            self.port.write_all(Command::BreakSequence)?;
-            sleep(Duration::from_millis(550)); // min. 500 ms silence on UART for breakout sequence
-
-            let _ = Read::by_ref(&mut self.port)
-                .bytes()
-                .take_while(|f| f.is_ok())
-                .collect::<Result<Vec<_>, _>>()?;
-
-            debug!("Recheck if in stream mode...");
-            self.switch_to_command_mode()?;
         }
+
+        debug!("No answer, expect stream mode, try to leave...");
+        sleep(Duration::from_millis(550));
+        self.port.write_all(Command::BreakSequence)?;
+        sleep(Duration::from_millis(550));
+        let _ = Read::by_ref(&mut self.port)
+            .bytes()
+            .take_while(|f| f.is_ok())
+            .collect::<Result<Vec<_>, _>>()?;
+        debug!("Recheck if in stream mode...");
+        self.switch_to_command_mode()?;
 
         debug!("Stream mode left");
 

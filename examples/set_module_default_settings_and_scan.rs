@@ -1,7 +1,11 @@
 use anyhow::Result;
 use log::{debug, error, info};
 use simple_logger::SimpleLogger;
-use std::net::{SocketAddr, TcpListener};
+use std::{
+    net::{SocketAddr, TcpListener},
+    thread::sleep,
+    time::Duration,
+};
 use BGX13P_lib_rust::bgx::Bgx13p;
 
 fn main() -> Result<()> {
@@ -22,5 +26,7 @@ fn main() -> Result<()> {
             }
             Err(e) => error!("{e}"),
         };
+
+        sleep(Duration::from_secs(5));
     }
 }
