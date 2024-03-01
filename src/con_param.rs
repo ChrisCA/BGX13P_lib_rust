@@ -1,12 +1,9 @@
-use std::str::FromStr;
-
 use anyhow::{anyhow, Error, Result};
 use log::debug;
 use winnow::{
-    bytes::tag,
-    character::{hex_digit1, multispace1},
-    sequence::preceded,
-    FinishIResult, IResult, Parser,
+    ascii::{hex_digit1, multispace1},
+    combinator::preceded,
+    PResult, Parser,
 };
 
 use crate::{mac::Mac, response::BgxResponse};
@@ -40,38 +37,36 @@ impl TryFrom<BgxResponse> for ConInfo {
 
         debug!("con param results:\n{}", &value);
 
-        let (_, mac) = parse_con_param(&value)
-            .finish_err()
-            .map_err(|e| e.into_owned())?;
+        let mac = parse_con_param(&mut value.as_str()).map_err(|e| anyhow!(e))?;
 
         Ok(ConInfo(mac))
     }
 }
 
 /// takes the con_param answer (wo header) and parses the MAC from it
-fn parse_con_param(s: &str) -> IResult<&str, Mac> {
+fn parse_con_param(input: &mut &str) -> PResult<Mac> {
     preceded(
         (
-            tag("!"),
+            "!",
             multispace1,
-            tag("Param"),
+            "Param",
             multispace1,
-            tag("Value"),
+            "Value",
             multispace1,
-            tag("#"),
+            "#",
             multispace1,
-            tag("Addr"),
+            "Addr",
             multispace1,
         ),
         hex_digit1,
     )
-    .map_res(Mac::from_str)
-    .parse_next(s)
+    .parse_to()
+    .parse_next(input)
 }
 
 #[test]
 fn test_parse_con_info() {
-    const CON_INFO: &str = "!  Param Value\r\n
+    let mut CON_INFO: &str = "!  Param Value\r\n
     #  Addr  D0CF5E828DF6\r\n
     #  Itvl  12\r\n
     #  Mtu   250\r\n
@@ -81,7 +76,7 @@ fn test_parse_con_info() {
 
     let ex_res = ConInfo("D0CF5E828DF6".parse().unwrap());
 
-    let test_res = ConInfo(parse_con_param(CON_INFO).unwrap().1);
+    let test_res = ConInfo(parse_con_param(&mut CON_INFO).unwrap());
 
     assert_eq!(ex_res, test_res)
 }

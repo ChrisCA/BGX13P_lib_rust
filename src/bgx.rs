@@ -6,7 +6,6 @@ use std::{
     thread::sleep,
     time::Duration,
 };
-use winnow::FinishIResult;
 
 use crate::{
     command::Command,
@@ -51,14 +50,12 @@ impl Bgx13p {
             .take_while(|f| f.is_ok())
             .collect::<Result<_, _>>()?;
 
-        let answer = std::str::from_utf8(&answer)?;
+        let answer = &mut std::str::from_utf8(&answer)?;
         trace!("FW version feedback: {}", answer);
 
         // parse FW version and check if compatible
         // atm only BGX13P.1.2.2738 with multiple endings as ".2-1524-2738" is considered
-        let (_, fw_version) = parse_fw_ver(answer)
-            .finish_err()
-            .map_err(|e| e.into_owned())?;
+        let fw_version = parse_fw_ver(answer).map_err(|e| anyhow!(e))?;
         info!("Found FW string: {fw_version}");
         let other_fw = !fw_version.contains("BGX13P.1.2.2738");
 
@@ -149,8 +146,7 @@ impl Bgx13p {
             .take_while(|f| f.is_ok())
             .collect::<Result<_, _>>()?;
 
-        let (_, resp) = parse_response(&bytes)
-            .finish_err()
+        let resp = parse_response(&mut bytes.as_slice())
             .map_err(|e| anyhow!("BGX response error: {e:?}"))?;
 
         Ok(resp)

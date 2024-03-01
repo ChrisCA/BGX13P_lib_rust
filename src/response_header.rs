@@ -1,11 +1,11 @@
-use winnow::{
-    bytes::{tag, take},
-    character::{crlf, digit1},
-    sequence::delimited,
-    IResult, Parser,
-};
-
 use std::str::{self, FromStr};
+
+use winnow::{
+    ascii::{crlf, digit1},
+    combinator::delimited,
+    token::take,
+    PResult, Parser,
+};
 
 use crate::response::ResponseCodes;
 
@@ -16,37 +16,34 @@ pub struct ResponseHeader {
 }
 
 // typical header -> R000117\r\n but R and newline should already been removed by the parser
-pub fn parse_header(input: &[u8]) -> IResult<&[u8], ResponseHeader> {
-    let (input, (response_code, data_length)) = delimited(
-        tag("R"),
+pub fn parse_header(input: &mut &[u8]) -> PResult<ResponseHeader> {
+    delimited(
+        "R",
         (
             take(1u8)
                 .and_then(digit1)
-                .map_res(str::from_utf8)
-                .map_res(u8::from_str)
-                .map_res(ResponseCodes::try_from),
+                .try_map(str::from_utf8)
+                .try_map(u8::from_str)
+                .try_map(ResponseCodes::try_from),
             take(5u8)
                 .and_then(digit1)
-                .map_res(str::from_utf8)
-                .map_res(u32::from_str),
+                .try_map(str::from_utf8)
+                .try_map(u32::from_str),
         ),
         crlf,
-    )(input)?;
-
-    Ok((
-        input,
-        ResponseHeader {
-            response_code,
-            data_length,
-        },
-    ))
+    )
+    .map(|p| ResponseHeader {
+        response_code: p.0,
+        data_length: p.1,
+    })
+    .parse_next(input)
 }
 
 #[test]
 fn test_response_header_1() {
-    const HEADER: &[u8] = b"R000009\r\n";
+    let mut HEADER: &[u8] = b"R000009\r\n";
 
-    let (_, h) = parse_header(HEADER).unwrap();
+    let h = parse_header(&mut HEADER).unwrap();
     let h2 = ResponseHeader {
         response_code: ResponseCodes::Success,
         data_length: 9,
@@ -58,9 +55,9 @@ fn test_response_header_1() {
 #[test]
 #[should_panic]
 fn test_response_header_2() {
-    const HEADER: &[u8] = b"R000010\r\n";
+    let mut HEADER: &[u8] = b"R000010\r\n";
 
-    let (_, h) = parse_header(HEADER).unwrap();
+    let h = parse_header(&mut HEADER).unwrap();
     let h2 = ResponseHeader {
         response_code: ResponseCodes::Success,
         data_length: 9,
@@ -72,39 +69,39 @@ fn test_response_header_2() {
 #[test]
 #[should_panic]
 fn test_response_header_3() {
-    const HEADER: &[u8] = b"00009\r\n";
+    let mut HEADER: &[u8] = b"00009\r\n";
 
-    let _ = parse_header(HEADER).unwrap();
+    let _ = parse_header(&mut HEADER).unwrap();
 }
 
 #[test]
 #[should_panic]
 fn test_response_header_4() {
-    const HEADER: &[u8] = b"RR0009\r\n";
+    let mut HEADER: &[u8] = b"RR0009\r\n";
 
-    let _ = parse_header(HEADER).unwrap();
+    let _ = parse_header(&mut HEADER).unwrap();
 }
 
 #[test]
 #[should_panic]
 fn test_response_header_5() {
-    const HEADER: &[u8] = b"R10009\r\n";
+    let mut HEADER: &[u8] = b"R10009\r\n";
 
-    let _ = parse_header(HEADER).unwrap();
+    let _ = parse_header(&mut HEADER).unwrap();
 }
 
 #[test]
 #[should_panic]
 fn test_response_header_6() {
-    const HEADER: &[u8] = b"2120009\r\n";
+    let mut HEADER: &[u8] = b"2120009\r\n";
 
-    let _ = parse_header(HEADER).unwrap();
+    let _ = parse_header(&mut HEADER).unwrap();
 }
 
 #[test]
 #[should_panic]
 fn test_response_header_7() {
-    const HEADER: &[u8] = b"R000009";
+    let mut HEADER: &[u8] = b"R000009";
 
-    let _ = parse_header(HEADER).unwrap();
+    let _ = parse_header(&mut HEADER).unwrap();
 }

@@ -1,9 +1,9 @@
 use log::{debug, warn};
 use thiserror::Error;
 use winnow::{
-    bytes::{any, take},
-    multi::many_till0,
-    IResult,
+    combinator::{repeat_till, rest},
+    token::{any, take},
+    PResult, Parser,
 };
 
 use crate::response_header::{parse_header, ResponseHeader};
@@ -65,7 +65,7 @@ pub enum BgxResponse {
 }
 
 // parses any BGX response
-pub fn parse_response(input: &[u8]) -> IResult<&[u8], BgxResponse> {
+pub fn parse_response(input: &mut &[u8]) -> PResult<BgxResponse> {
     /*
     SAMPLE:
     R000029\r\n
@@ -74,31 +74,35 @@ pub fn parse_response(input: &[u8]) -> IResult<&[u8], BgxResponse> {
     debug!("BGX answered: {:?}", input);
 
     // return response if no header has been found, otherwise show if there has been something before and get header
-    let (input, header) = match many_till0(any, parse_header)(input) {
-        Ok((input, (before, header))) => {
+    let (input, header) = match repeat_till(0.., any, parse_header).parse_next(input) {
+        Ok((before, header)) => {
             let before: Vec<u8> = before; // just for defining the type
             if !before.is_empty() {
                 warn!("Data before header: {:?}", before);
             }
             (input, header)
         }
-        Err(_) => return Ok((b"", BgxResponse::DataWithoutHeader(input.to_vec()))),
+        Err(_) => {
+            return Ok(BgxResponse::DataWithoutHeader(
+                rest.map(Vec::from).parse_next(input)?,
+            ))
+        }
     };
 
     debug!("Header: {:?}", &header);
-    let (input, answer) = take(header.data_length)(input)?;
+    let answer = take(header.data_length).parse_next(input)?;
 
     let answer = match String::from_utf8(answer.to_vec()) {
         Ok(answer) => answer,
         Err(_) => format!("{answer:?}"),
     };
 
-    Ok((input, BgxResponse::DataWithHeader(header, answer)))
+    Ok(BgxResponse::DataWithHeader(header, answer))
 }
 
 #[test]
 fn module_response_test_1() {
-    const input1: &[u8] = b"R000029\r\nBGX13P.1.2.2738.2-1524-2738\r\n";
+    let mut input1: &[u8] = b"R000029\r\nBGX13P.1.2.2738.2-1524-2738\r\n";
 
     assert_eq!(
         BgxResponse::DataWithHeader(
@@ -108,13 +112,13 @@ fn module_response_test_1() {
             },
             "BGX13P.1.2.2738.2-1524-2738\r\n".to_string(),
         ),
-        parse_response(input1).unwrap().1
+        parse_response(&mut input1).unwrap()
     )
 }
 
 #[test]
 fn module_response_test_2() {
-    const input: &[u8] = &[
+    let mut input: &[u8] = &[
         82, 48, 48, 48, 50, 51, 49, 13, 10, 33, 32, 32, 35, 32, 82, 83, 83, 73, 32, 66, 68, 95, 65,
         68, 68, 82, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 68, 101, 118, 105, 99, 101, 32, 78,
         97, 109, 101, 13, 10, 35, 32, 32, 49, 32, 32, 45, 55, 49, 32, 101, 99, 58, 49, 98, 58, 98,
@@ -128,7 +132,7 @@ fn module_response_test_2() {
         58, 57, 49, 58, 98, 55, 32, 76, 79, 82, 45, 56, 48, 57, 48, 13, 10,
     ];
 
-    const input_wo_header: &[u8] = &[
+    let input_wo_header: &[u8] = &[
         33, 32, 32, 35, 32, 82, 83, 83, 73, 32, 66, 68, 95, 65, 68, 68, 82, 32, 32, 32, 32, 32, 32,
         32, 32, 32, 32, 32, 68, 101, 118, 105, 99, 101, 32, 78, 97, 109, 101, 13, 10, 35, 32, 32,
         49, 32, 32, 45, 55, 49, 32, 101, 99, 58, 49, 98, 58, 98, 100, 58, 49, 98, 58, 49, 50, 58,
@@ -150,6 +154,6 @@ fn module_response_test_2() {
             },
             String::from_utf8(input_wo_header.to_vec()).unwrap(),
         ),
-        parse_response(input).unwrap().1
+        parse_response(&mut input).unwrap()
     )
 }
